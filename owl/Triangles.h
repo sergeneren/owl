@@ -59,6 +59,12 @@ namespace owl {
           indices will live in some sort of buffer; this only points
           to that buffer */
       CUdeviceptr indexPointer  = (CUdeviceptr)0;
+      CUdeviceptr texCoordPointer  = (CUdeviceptr)0;
+
+#ifdef OWL_CAN_DO_OMM
+      CUdeviceptr ommArrayPointer  = (CUdeviceptr)0;
+      CUdeviceptr ommIndexPointer  = (CUdeviceptr)0;
+#endif
     };
 
     /*! constructor - create a new (as yet without vertices, indices,
@@ -86,12 +92,23 @@ namespace owl {
                     size_t count,
                     size_t stride,
                     size_t offset);
+    
+    /*! set the texCoord buffer; this remains one buffer even if motion blur is enabled. */
+    void setTexCoord(Buffer::SP texCoords,
+                    size_t count,
+                    size_t stride,
+                    size_t offset);
 
     /*! call a cuda kernel that computes the bounds of the vertex buffers */
     void computeBounds(box3f bounds[2]);
 
+    /*! call a cuda kernel that computes the opacity micro maps */
+    void computeOMM(Texture& tex);
+
     /*! pretty-print */
     std::string toString() const override;
+
+    void setSubdivisionLevel(unsigned int level) { subdivisionLevel = level; }
 
     struct {
       size_t count  = 0;
@@ -103,8 +120,16 @@ namespace owl {
       size_t count  = 0;
       size_t stride = 0;
       size_t offset = 0;
+      Buffer::SP buffer;
+    } texCoord;
+    struct {
+      size_t count  = 0;
+      size_t stride = 0;
+      size_t offset = 0;
       std::vector<Buffer::SP> buffers;
     } vertex;
+
+    unsigned int subdivisionLevel = 0;
   };
 
   // ------------------------------------------------------------------
@@ -117,5 +142,4 @@ namespace owl {
     assert(device->ID < (int)deviceData.size());
     return deviceData[device->ID]->as<TrianglesGeom::DeviceData>();
   }
-  
 } // ::owl

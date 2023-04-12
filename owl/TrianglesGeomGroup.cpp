@@ -125,16 +125,37 @@ namespace owl {
 
     // now go over all geometries to set up the buildinputs
     for (size_t childID=0;childID<geometries.size();childID++) {
-      
+
       // the child wer're setting them with (with sanity checks)
       TrianglesGeom::SP tris = geometries[childID]->as<TrianglesGeom>();
       assert(tris);
-      
+
       if (tris->vertex.buffers.size() != (size_t)numKeys)
         OWL_RAISE("invalid combination of meshes with "
                   "different motion keys in the same "
                   "triangles geom group");
       TrianglesGeom::DeviceData &trisDD = tris->getDD(device);
+
+#ifdef OWL_CAN_DO_OMM
+      // TODO build deviceData omm device pointers 
+      OptixBuildInputOpacityMicromap ommInput = {};
+      if(trisDD.ommArrayPointer && trisDD.ommIndexPointer && tris->subdivisionLevel > 0)
+      {
+          // Build Opacity Micro Map
+          unsigned int numTris =  tris->index.count / 3; // Number of triangles 
+	      OptixOpacityMicromapUsageCount usage_count = {};
+          usage_count.count = numTris;
+	      usage_count.format = OPTIX_OPACITY_MICROMAP_FORMAT_4_STATE;
+	      usage_count.subdivisionLevel = tris->subdivisionLevel;
+               
+	      ommInput.indexingMode = OPTIX_OPACITY_MICROMAP_ARRAY_INDEXING_MODE_INDEXED;
+	      ommInput.opacityMicromapArray = trisDD.ommArrayPointer;
+	      ommInput.indexBuffer = trisDD.ommIndexPointer;
+	      ommInput.indexSizeInBytes = 2;
+	      ommInput.numMicromapUsageCounts = 1;
+	      ommInput.micromapUsageCounts = &usage_count;
+      }
+#endif // OWL_CAN_DO_OMM
       
       CUdeviceptr     *d_vertices    = trisDD.vertexPointers.data();
       assert(d_vertices);
@@ -151,6 +172,12 @@ namespace owl {
       ta.indexStrideInBytes  = (uint32_t)tris->index.stride;
       ta.numIndexTriplets    = (uint32_t)tris->index.count;
       ta.indexBuffer         = trisDD.indexPointer;
+
+#ifdef OWL_CAN_DO_OMM
+      ta.opacityMicromap     = ommInput;
+#endif // OWL_CAN_DO_OMM
+
+
       assert(ta.indexBuffer);
       
       // -------------------------------------------------------

@@ -37,6 +37,9 @@
 # define OWL_CAN_DO_SPHERES 1
 #endif
 
+#if OPTIX_VERSION >= 70600
+# define OWL_CAN_DO_OMM 1
+#endif
 
 #if defined(_MSC_VER)
 #  define OWL_DLL_EXPORT __declspec(dllexport)
