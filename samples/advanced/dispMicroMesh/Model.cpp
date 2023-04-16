@@ -127,6 +127,53 @@ namespace osc {
     return textureID;
   }
   
+    /*! load a texture and return its ID in the
+      model's textures[] vector. Textures that could not get loaded
+      return -1 */
+  int loadTexture(Model *model,
+                  const std::string &inFileName,
+                  const std::string &modelPath)
+  {
+    if (inFileName == "")
+      return -1;
+    
+    std::string fileName = inFileName;
+    // first, fix backspaces:
+    for (auto &c : fileName)
+      if (c == '\\') c = '/';
+    fileName = modelPath+"/"+fileName;
+
+    vec2i res;
+    int   comp;
+    unsigned char* image = stbi_load(fileName.c_str(),
+                                     &res.x, &res.y, &comp, STBI_rgb_alpha);
+    int textureID = -1;
+    if (image) {
+      textureID = (int)model->textures.size();
+      Texture *texture = new Texture;
+      texture->resolution = res;
+      texture->pixel      = (uint32_t*)image;
+
+      /* iw - actually, it seems that stbi loads the pictures
+         mirrored along the y axis - mirror them here */
+      for (int y=0;y<res.y/2;y++) {
+        uint32_t *line_y = texture->pixel + y * res.x;
+        uint32_t *mirrored_y = texture->pixel + (res.y-1-y) * res.x;
+        for (int x=0;x<res.x;x++) {
+          std::swap(line_y[x],mirrored_y[x]);
+        }
+      }
+      
+      model->textures.push_back(texture);
+    } else {
+      std::cout << OWL_TERMINAL_RED
+                << "Could not load texture from " << fileName << "!"
+                << OWL_TERMINAL_DEFAULT << std::endl;
+    }
+    
+    return textureID;
+  }
+
   Model *loadOBJ(const std::string &objFile)
   {
     Model *model = new Model;
@@ -150,9 +197,6 @@ namespace osc {
                          /* triangulate */true);
     if (!readOK) 
       throw std::runtime_error("Could not read OBJ model from "+objFile+" : "+err);
-
-    if (materials.empty())
-      throw std::runtime_error("could not parse materials ...");
 
     std::cout << "Done loading obj file - found " << shapes.size() << " shapes with " << materials.size() << " materials" << std::endl;
     std::map<std::string, int>      knownTextures;
@@ -208,11 +252,12 @@ namespace osc {
                 idx.z < 0 || idx.z >= (int)mesh->vertex.size())
               throw std::runtime_error("invalid triangle indices");
           }
-
           model->meshes.push_back(mesh);
         }
       }
     }
+
+    loadTexture(model, "displacement.png", modelDir + "Textures");
 
     // of course, you should be using tbb::parallel_for for stuff
     // like this:

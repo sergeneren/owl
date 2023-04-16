@@ -1,5 +1,5 @@
 # ======================================================================== #
-# Copyright 2019-2020 Ingo Wald                                            #
+# Copyright 2020-2021 Ingo Wald                                            #
 #                                                                          #
 # Licensed under the Apache License, Version 2.0 (the "License");          #
 # you may not use this file except in compliance with the License.         #
@@ -14,11 +14,23 @@
 # limitations under the License.                                           #
 # ======================================================================== #
 
-# ---------------------------------------------------------------------------
-# a more serious kind of example with model loader, viewer, simple
-# path tracer, etc
-# ---------------------------------------------------------------------------
-add_subdirectory(optix7course)
-add_subdirectory(dispMicroMesh)
+embed_ptx(
+  OUTPUT_TARGET
+    adv-dispMicroMesh-ptx
+  PTX_LINK_LIBRARIES
+    owl::owl
+  SOURCES
+    deviceCode.cu
+)
 
+add_definitions(-DMODEL_DIR="${CMAKE_CURRENT_SOURCE_DIR}/Models")
 
+add_executable(adv-dispMicroMesh 
+  hostCode.cpp 
+  Model.h
+  Model.cpp)
+target_link_libraries(adv-dispMicroMesh
+  PRIVATE
+    adv-dispMicroMesh-ptx
+    owl_viewer
+)

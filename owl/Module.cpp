@@ -122,14 +122,14 @@ namespace owl {
                                       ));
 #else
     OPTIX_CHECK_LOG(optixModuleCreateFromPTX(device->optixContext,
-                                             &device->moduleCompileOptions,
-                                             &device->pipelineCompileOptions,
-                                             parent->ptxCode.c_str(),
-                                             strlen(parent->ptxCode.c_str()),
-                                             log,      // Log string
-                                             &sizeof_log,// Log string sizse
-                                             &module
-                                             ));
+                                      &device->moduleCompileOptions,
+                                      &device->pipelineCompileOptions,
+                                      parent->ptxCode.c_str(),
+                                      strlen(parent->ptxCode.c_str()),
+                                      log,      // Log string
+                                      &sizeof_log,// Log string sizse
+                                      &module
+                                      ));
 #endif
     assert(module != nullptr);
 

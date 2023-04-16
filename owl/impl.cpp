@@ -1141,6 +1141,78 @@ owlTrianglesSetIndices(OWLGeom   _triangles,
   triangles->setIndices(buffer,count,stride,offset);
 }
 
+OWL_API void
+owlTrianglesSetTexCoords(OWLGeom   _triangles,
+                       OWLBuffer _buffer,
+                       size_t count,
+                       size_t stride,
+                       size_t offset)
+{
+  LOG_API_CALL();
+    
+  assert(_triangles);
+  assert(_buffer);
+
+  TrianglesGeom::SP triangles
+    = ((APIHandle *)_triangles)->get<TrianglesGeom>();
+  assert(triangles);
+
+  Buffer::SP buffer
+    = ((APIHandle *)_buffer)->get<Buffer>();
+  assert(buffer);
+
+  triangles->setTexCoord(buffer,count,stride,offset);
+}
+
+OWL_API void
+owlTrianglesSetDMM(OWLGeom   _triangles,
+                   OWLTexture _dispTex)
+{
+  LOG_API_CALL();
+    
+  assert(_triangles);
+  assert(_dispTex);
+
+  TrianglesGeom::SP triangles
+    = ((APIHandle *)_triangles)->get<TrianglesGeom>();
+  assert(triangles);
+
+  Texture::SP dispTex
+	  = ((APIHandle*)_dispTex)->get<Texture>();
+  assert(dispTex);
+
+  triangles->computeDMM(dispTex);
+}
+
+OWL_API void 
+owlTrianglesSetSubdivisionLevel(OWLGeom _triangles,
+	unsigned int level)
+{
+	LOG_API_CALL();
+
+	assert(_triangles);
+
+	TrianglesGeom::SP triangles
+		= ((APIHandle*)_triangles)->get<TrianglesGeom>();
+	assert(triangles);
+
+	triangles->setSubdivisionLevel(level);
+}
+
+OWL_API void owlTrianglesSetDisplacementScale(OWLGeom _triangles,
+	float scale)
+{
+	LOG_API_CALL();
+
+	assert(_triangles);
+
+	TrianglesGeom::SP triangles
+		= ((APIHandle*)_triangles)->get<TrianglesGeom>();
+	assert(triangles);
+
+	triangles->setDisplacementScale(scale);
+}
+
 // ==================================================================
 // function pointer setters ....
 // ==================================================================

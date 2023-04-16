@@ -45,7 +45,8 @@ namespace owl {
                                          unsigned int _buildFlags)
     : GeomGroup(context,numChildren), 
     buildFlags( (_buildFlags > 0) ? _buildFlags : defaultBuildFlags)
-  {}
+  {
+  }
   
   void TrianglesGeomGroup::updateMotionBounds()
   {
@@ -123,6 +124,8 @@ namespace owl {
     // one build flag per build input
     std::vector<uint32_t> triangleInputFlags(geometries.size());
 
+    size_t maxNumbytesDmm = 0;
+
     // now go over all geometries to set up the buildinputs
     for (size_t childID=0;childID<geometries.size();childID++) {
 
@@ -142,7 +145,7 @@ namespace owl {
       if(trisDD.ommArrayPointer && trisDD.ommIndexPointer && tris->subdivisionLevel > 0)
       {
           // Build Opacity Micro Map
-          unsigned int numTris =  tris->index.count / 3; // Number of triangles 
+          unsigned int numTris =  (unsigned int)(tris->index.count / 3); // Number of triangles 
 	      OptixOpacityMicromapUsageCount usage_count = {};
           usage_count.count = numTris;
 	      usage_count.format = OPTIX_OPACITY_MICROMAP_FORMAT_4_STATE;
@@ -177,6 +180,93 @@ namespace owl {
       ta.opacityMicromap     = ommInput;
 #endif // OWL_CAN_DO_OMM
 
+#ifdef OWL_CAN_DO_DMM
+
+      auto &dmm  = trisDD.dmmArray;
+      if(tris->subdivisionLevel>0 && tris->displacementScale!=0.0f && dmm.d_displacementValues && dmm.d_displacementDirections)
+      {
+		  unsigned int dmmSubdivisionLevelSubTriangles = std::max(0, (int)tris->subdivisionLevel - 3);
+		  unsigned int numSubTrianglesPerBaseTriangle = 1 << (2 * dmmSubdivisionLevelSubTriangles);
+		  constexpr int      subTriSizeByteSize = 64;  // 64B for format OPTIX_DISPLACEMENT_MICROMAP_FORMAT_64_MICRO_TRIS_64_BYTES
+
+		  size_t numTriangles = tris->index.count / 3;
+		  size_t numSubTriangles = numTriangles * numSubTrianglesPerBaseTriangle;
+
+		  //////////////////////////////////////////////////////////////////////////
+		  // The actual build of the displacement micromap array.
+		  // Only the displacement values are needed here along with the descriptors.
+		  // How these values are applied to triangles (displacement directions, indexing, potential scale/bias) is specified at the triangle build input (GAS build)         
+		  OptixDisplacementMicromapArrayBuildInput bi = {};
+
+		  bi.flags = OPTIX_DISPLACEMENT_MICROMAP_FLAG_NONE;
+		  // We have a very simple distribution of subdivision levels and format usage.
+		  // All triangles of the mesh use the uncompressed format, and a fixed subdivision level.
+		  // As such, the histogram over the different formats/subdivision levels has only a single entry.
+		  // Also, none of the displacement micromaps are re-used between triangles, so we put 'numTriangles' displacement micromaps into an array.
+
+          OptixDisplacementMicromapHistogramEntry histogram;
+
+		  histogram.count = (unsigned int)numTriangles;
+		  histogram.format = OPTIX_DISPLACEMENT_MICROMAP_FORMAT_64_MICRO_TRIS_64_BYTES;
+		  histogram.subdivisionLevel = tris->subdivisionLevel;
+		  
+          bi.numDisplacementMicromapHistogramEntries = 1;
+		  bi.displacementMicromapHistogramEntries = &histogram;
+
+		  OptixMicromapBufferSizes bs = {};
+		  OPTIX_CHECK(optixDisplacementMicromapArrayComputeMemoryUsage(device->optixContext, &bi, &bs));
+
+		  // Provide the device data for the DMM array build
+		  std::vector<OptixDisplacementMicromapDesc> descriptors(numTriangles);
+		  for (unsigned int i = 0; i < numTriangles; ++i)
+		  {
+			  OptixDisplacementMicromapDesc& desc = descriptors[i];
+			  desc.byteOffset = i * subTriSizeByteSize * numSubTrianglesPerBaseTriangle;
+			  desc.format = OPTIX_DISPLACEMENT_MICROMAP_FORMAT_64_MICRO_TRIS_64_BYTES;
+			  desc.subdivisionLevel = tris->subdivisionLevel;
+		  }
+
+		  DeviceMemory d_descriptors;
+		  d_descriptors.upload(descriptors);
+
+		  bi.perDisplacementMicromapDescBuffer = d_descriptors.d_pointer;
+		  bi.displacementValuesBuffer = trisDD.dmmArray.d_displacementValues;
+
+		  dmm.d_dmmArrayData.alloc(bs.outputSizeInBytes);
+		  dmm.d_build_temp.alloc(bs.outputSizeInBytes);
+
+          maxNumbytesDmm = max(maxNumbytesDmm, bs.outputSizeInBytes);
+
+		  OptixMicromapBuffers uBuffers = {};
+		  uBuffers.output = dmm.d_dmmArrayData.d_pointer;
+		  uBuffers.outputSizeInBytes = dmm.d_dmmArrayData.sizeInBytes;
+		  uBuffers.temp = dmm.d_build_temp.d_pointer;
+		  uBuffers.tempSizeInBytes = dmm.d_build_temp.sizeInBytes;
+
+		  OPTIX_CHECK(optixDisplacementMicromapArrayBuild(device->optixContext, /* todo: stream */0, &bi, &uBuffers));
+
+          OptixDisplacementMicromapUsageCount usage = {};
+	      OptixBuildInputDisplacementMicromap& disp = ta.displacementMicromap;
+
+	      disp.indexingMode = OPTIX_DISPLACEMENT_MICROMAP_ARRAY_INDEXING_MODE_LINEAR;
+	      disp.displacementMicromapArray = dmm.d_dmmArrayData.d_pointer;
+
+	      // Displacement directions, 3 vectors (these do not need to be normalized!)
+	      // While the API accepts float values for convenience, OptiX uses the half format internally. Float inputs are converted to half.
+	      // So it is usually best to input half values directly to control precision.
+	      disp.vertexDirectionsBuffer = dmm.d_displacementDirections;
+	      disp.vertexDirectionFormat = OPTIX_DISPLACEMENT_MICROMAP_DIRECTION_FORMAT_FLOAT3;
+
+	      // Since we create exactly one displacement micromap per triangle and we apply a displacement micromap to every triangle, there
+	      // is a one to one mapping between the DMM usage and the DMM histogram
+	      // we could even do a reinterpret_cast from dmm histogram to dmm usage here
+	      usage.count = histogram.count;
+	      usage.format = histogram.format;
+	      usage.subdivisionLevel = histogram.subdivisionLevel;
+	      disp.numDisplacementMicromapUsageCounts = 1;
+	      disp.displacementMicromapUsageCounts = &usage;
+      }
+#endif // OWL_CAN_DO_DMM
 
       assert(ta.indexBuffer);
       
@@ -212,6 +302,10 @@ namespace owl {
     // ------------------------------------------------------------------
     OptixAccelBuildOptions accelOptions = {};
     accelOptions.buildFlags = this->buildFlags;
+
+#ifdef OWL_CAN_DO_DMM
+    accelOptions.buildFlags |=  OPTIX_BUILD_FLAG_ALLOW_RANDOM_VERTEX_ACCESS | OPTIX_BUILD_FLAG_PREFER_FAST_TRACE ;
+#endif // OWL_CAN_DO_DMM
     
     accelOptions.motionOptions.numKeys   = numKeys;
     accelOptions.motionOptions.flags     = 0;
@@ -255,8 +349,8 @@ namespace owl {
                        :blasBufferSizes.tempUpdateSizeInBytes);
     else
       tempBuffer.alloc(FULL_REBUILD
-                       ?max(blasBufferSizes.tempSizeInBytes,
-                            blasBufferSizes.tempUpdateSizeInBytes)
+                       ?max(maxNumbytesDmm, max(blasBufferSizes.tempSizeInBytes,
+                            blasBufferSizes.tempUpdateSizeInBytes))
                        :blasBufferSizes.tempUpdateSizeInBytes);
     if (FULL_REBUILD) {
       // Only track this on first build, assuming temp buffer gets smaller for refit

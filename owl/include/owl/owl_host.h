@@ -41,6 +41,10 @@
 # define OWL_CAN_DO_OMM 1
 #endif
 
+#if OPTIX_VERSION >= 70700
+# define OWL_CAN_DO_DMM 1
+#endif
+
 #if defined(_MSC_VER)
 #  define OWL_DLL_EXPORT __declspec(dllexport)
 #  define OWL_DLL_IMPORT __declspec(dllimport)
@@ -888,6 +892,22 @@ OWL_API void owlTrianglesSetIndices(OWLGeom triangles,
                                     size_t count,
                                     size_t stride,
                                     size_t offset);
+
+OWL_API void owlTrianglesSetTexCoords(OWLGeom triangles,
+                                    OWLBuffer texCoords,
+                                    size_t count,
+                                    size_t stride,
+                                    size_t offset);
+
+OWL_API void owlTrianglesSetDMM(OWLGeom triangles,
+                                OWLTexture displacementTexture);
+
+OWL_API void owlTrianglesSetSubdivisionLevel(OWLGeom triangles,
+                                unsigned int level);
+
+OWL_API void owlTrianglesSetDisplacementScale(OWLGeom triangles,
+                                float scale);
+
 
 // ==================================================================
 // "Curves" functions

@@ -337,6 +337,10 @@ namespace owl {
    pipelineCompileOptions.allowOpacityMicromaps = true;
 #endif
 
+#if OWL_CAN_DO_DMM
+   pipelineCompileOptions.usesPrimitiveTypeFlags |=  OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE | OPTIX_PRIMITIVE_TYPE_FLAGS_DISPLACED_MICROMESH_TRIANGLE;
+#endif
+
 // #if 1
 //     std::cout << "HACK: FORCE-ENABLE CURVES!" << std::endl;
 //     int degree = 1;

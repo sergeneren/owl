@@ -65,6 +65,16 @@ namespace owl {
       CUdeviceptr ommArrayPointer  = (CUdeviceptr)0;
       CUdeviceptr ommIndexPointer  = (CUdeviceptr)0;
 #endif
+
+#ifdef OWL_CAN_DO_DMM
+	  struct DmmArray
+	  {
+		  DeviceMemory                            d_dmmArrayData;
+		  DeviceMemory                            d_build_temp;
+		  CUdeviceptr                             d_displacementDirections;
+		  CUdeviceptr                             d_displacementValues;
+	  } dmmArray;
+#endif // OWL_CAN_DO_DMM
     };
 
     /*! constructor - create a new (as yet without vertices, indices,
@@ -105,10 +115,14 @@ namespace owl {
     /*! call a cuda kernel that computes the opacity micro maps */
     void computeOMM(Texture& tex);
 
+    /*! call a cuda kernel that computes the displacement micro mesh buffers */
+    void computeDMM(Texture::SP tex);
+
     /*! pretty-print */
     std::string toString() const override;
 
     void setSubdivisionLevel(unsigned int level) { subdivisionLevel = level; }
+    void setDisplacementScale(float scale) { displacementScale = scale; }
 
     struct {
       size_t count  = 0;
@@ -130,6 +144,7 @@ namespace owl {
     } vertex;
 
     unsigned int subdivisionLevel = 0;
+    float displacementScale = 1.0f;
   };
 
   // ------------------------------------------------------------------
