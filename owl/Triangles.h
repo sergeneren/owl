@@ -59,6 +59,7 @@ namespace owl {
           indices will live in some sort of buffer; this only points
           to that buffer */
       CUdeviceptr indexPointer  = (CUdeviceptr)0;
+      CUdeviceptr normalPointer  = (CUdeviceptr)0;
       CUdeviceptr texCoordPointer  = (CUdeviceptr)0;
 
 #ifdef OWL_CAN_DO_OMM
@@ -71,8 +72,8 @@ namespace owl {
 	  {
 		  DeviceMemory                            d_dmmArrayData;
 		  DeviceMemory                            d_build_temp;
-		  CUdeviceptr                             d_displacementDirections;
-		  CUdeviceptr                             d_displacementValues;
+		  CUdeviceptr                             d_displacementDirections = (CUdeviceptr)0;
+		  CUdeviceptr                             d_displacementValues = (CUdeviceptr)0;
 	  } dmmArray;
 #endif // OWL_CAN_DO_DMM
     };
@@ -108,6 +109,12 @@ namespace owl {
                     size_t count,
                     size_t stride,
                     size_t offset);
+    
+    /*! set the normals buffer; this remains one buffer even if motion blur is enabled. */
+    void setNormals(Buffer::SP texCoords,
+                    size_t count,
+                    size_t stride,
+                    size_t offset);
 
     /*! call a cuda kernel that computes the bounds of the vertex buffers */
     void computeBounds(box3f bounds[2]);
@@ -136,6 +143,12 @@ namespace owl {
       size_t offset = 0;
       Buffer::SP buffer;
     } texCoord;
+    struct {
+      size_t count  = 0;
+      size_t stride = 0;
+      size_t offset = 0;
+      Buffer::SP buffer;
+    } normal;
     struct {
       size_t count  = 0;
       size_t stride = 0;

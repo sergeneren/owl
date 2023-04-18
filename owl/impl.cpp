@@ -1165,6 +1165,29 @@ owlTrianglesSetTexCoords(OWLGeom   _triangles,
 }
 
 OWL_API void
+owlTrianglesSetNormals(OWLGeom   _triangles,
+                       OWLBuffer _buffer,
+                       size_t count,
+                       size_t stride,
+                       size_t offset)
+{
+  LOG_API_CALL();
+    
+  assert(_triangles);
+  assert(_buffer);
+
+  TrianglesGeom::SP triangles
+    = ((APIHandle *)_triangles)->get<TrianglesGeom>();
+  assert(triangles);
+
+  Buffer::SP buffer
+    = ((APIHandle *)_buffer)->get<Buffer>();
+  assert(buffer);
+
+  triangles->setNormals(buffer,count,stride,offset);
+}
+
+OWL_API void
 owlTrianglesSetDMM(OWLGeom   _triangles,
                    OWLTexture _dispTex)
 {

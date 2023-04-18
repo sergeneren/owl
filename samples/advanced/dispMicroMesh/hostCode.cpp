@@ -143,8 +143,6 @@ Viewer::Viewer()
 
   LOG("building geometries ...");
   
-  
-
   // upload the model to the device: the builder
   TriangleMesh& mesh = *isoSphereModel->meshes[0];
   
@@ -154,6 +152,12 @@ Viewer::Viewer()
    ? nullptr
    : owlDeviceBufferCreate(context, OWL_FLOAT2, mesh.texcoord.size(),
     mesh.texcoord.data());
+  OWLBuffer normalBuffer = mesh.normal.empty()
+   ? nullptr
+   : owlDeviceBufferCreate(context, OWL_FLOAT3, mesh.normal.size(),
+    mesh.normal.data());
+
+
   // create the geom
   OWLGeom trianglesGeom  = owlGeomCreate(context, trianglesGeomType);
   
@@ -164,14 +168,16 @@ Viewer::Viewer()
    mesh.index.size(), sizeof(vec3i), 0);
   owlTrianglesSetTexCoords(trianglesGeom, texcoordBuffer, 
                          mesh.texcoord.size(), sizeof(vec2f), 0);
+  owlTrianglesSetNormals(trianglesGeom, normalBuffer, 
+                         mesh.normal.size(), sizeof(vec3f), 0);
 
   // set sbt data
   owlGeomSetBuffer(trianglesGeom, "index", indexBuffer);
   owlGeomSetBuffer(trianglesGeom, "vertex", vertexBuffer);
   owlGeomSetBuffer(trianglesGeom, "texCoord", texcoordBuffer);
 
-
-  owlTrianglesSetSubdivisionLevel(trianglesGeom, 3);
+  owlTrianglesSetSubdivisionLevel(trianglesGeom, 5);
+  owlTrianglesSetDisplacementScale(trianglesGeom, .01f);
 
   // ------------------------------------------------------------------
   // create a 4x4 checkerboard texture

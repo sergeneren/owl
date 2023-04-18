@@ -899,6 +899,12 @@ OWL_API void owlTrianglesSetTexCoords(OWLGeom triangles,
                                     size_t stride,
                                     size_t offset);
 
+OWL_API void owlTrianglesSetNormals(OWLGeom triangles,
+                                    OWLBuffer normals,
+                                    size_t count,
+                                    size_t stride,
+                                    size_t offset);
+
 OWL_API void owlTrianglesSetDMM(OWLGeom triangles,
                                 OWLTexture displacementTexture);
 

@@ -270,6 +270,7 @@ namespace owl {
       DisplacementBlock64MicroTris64B* d_displacementBlocks,
       vec3f* d_displacementDirections,
       vec2f* texCoords,
+      vec3f* normals,
       cudaTextureObject_t texturePtr,
       unsigned int numSubTriangles,
       unsigned int numTriangles,
@@ -309,18 +310,23 @@ namespace owl {
 
     // Set displacement directions per index 
     {
-        //float4 disp = tex2D<float4>(texturePtr, baseUV0.x,  baseUV0.y);
-        //d_displacementDirections[vtxIdx0] = vec3f(disp.x, disp.y, disp.z);
+        if(normals)
+        {
+          vec3f normal = normals[vtxIdx0];
+          d_displacementDirections[vtxIdx0] = normal * displacementScale;
 
-        //disp = tex2D<float4>(texturePtr, baseUV1.x,  baseUV1.y);
-        //d_displacementDirections[vtxIdx1] = vec3f(disp.x, disp.y, disp.z);
+          normal = normals[vtxIdx1];
+          d_displacementDirections[vtxIdx1] = normal * displacementScale;
 
-        //disp = tex2D<float4>(texturePtr, baseUV2.x,  baseUV2.y);
-        //d_displacementDirections[vtxIdx2] = vec3f(disp.x, disp.y, disp.z);
-        vec3f direction(0.0f, 0.0f, 1.0f * displacementScale);
-        d_displacementDirections[vtxIdx0] = direction;
-        d_displacementDirections[vtxIdx1] = direction;
-        d_displacementDirections[vtxIdx2] = direction;
+          normal = normals[vtxIdx2];
+          d_displacementDirections[vtxIdx2] = normal * displacementScale;
+        }
+        else{
+            vec3f direction(0.0f, displacementScale, 0.0f);
+            d_displacementDirections[vtxIdx0] = direction;
+            d_displacementDirections[vtxIdx1] = direction;
+            d_displacementDirections[vtxIdx2] = direction;
+        }
     }
 
     // Set micro triangle micro mesh array 
@@ -347,14 +353,14 @@ namespace owl {
             float2 microVertexUV = (1.0f - microVertexBary.x - microVertexBary.y) * subTriUV0 + microVertexBary.x * subTriUV1 + microVertexBary.y * subTriUV2;
 
             float4 disp = tex2D<float4>(texturePtr, microVertexUV.x,  microVertexUV.y);
-            uint16_t packedDisp = __saturatef(disp.x) * 0x7FF;
+            uint16_t packedDisp = __saturatef(disp.x) * 0x7FFF;
 
             block.setDisplacement( UMAJOR_TO_HIERARCHICAL_VTX_IDX_LUT[UMAJOR_TO_HIERARCHICAL_VTX_IDX_LUT_OFFSET[perBlockSubdivisionLevel] + uMajorVertIdx], packedDisp );
             uMajorVertIdx++;
         }
     }
 
-    d_displacementBlocks[triIdx * numSubTrianglesPerBaseTriangle + subTriIdx] = block;
+    d_displacementBlocks[tid] = block;
   }
                                           
   // ------------------------------------------------------------------
@@ -490,7 +496,7 @@ namespace owl {
       const unsigned int numSubTrianglesPerBaseTriangle  = 1 << ( 2 * dmmSubdivisionLevelSubTriangles );
       constexpr int      subTriSizeByteSize = 64;  // 64B for format OPTIX_DISPLACEMENT_MICROMAP_FORMAT_64_MICRO_TRIS_64_BYTES
       
-      size_t numTriangles = index.count / 3;
+      size_t numTriangles = index.count;
       size_t numSubTriangles = numTriangles * numSubTrianglesPerBaseTriangle;
 
       DeviceContext::SP device = context->getDevice(0);
@@ -511,14 +517,16 @@ namespace owl {
         int numBlocks = int((numSubTriangles + numThreads - 1) / numThreads);
         
         d_displacementValues.alloc(numSubTriangles * sizeof(DisplacementBlock64MicroTris64B));
-        d_displacementDirections.alloc(index.count * sizeof(vec3f));
+        d_displacementDirections.alloc(vertex.count * sizeof(vec3f));
         
         auto texCoordsDD = texCoord.buffer->getDD(device);
+        auto normalsDD = normal.buffer->getDD(device);
         
         computeDMMArray<<<numBlocks,numThreads>>>(
             (DisplacementBlock64MicroTris64B*)d_displacementValues.get()
             , (vec3f*)d_displacementDirections.get()
             , (vec2f*)texCoordsDD.d_pointer
+            , (vec3f*)normalsDD.d_pointer
             , texDD
             , numSubTriangles
             , numTriangles
@@ -575,6 +583,22 @@ namespace owl {
     for (auto device : context->getDevices()) {
       DeviceData &dd = getDD(device);
       dd.indexPointer = (CUdeviceptr)indices->getPointer(device) + offset;
+    }
+  }
+  
+  void TrianglesGeom::setNormals(Buffer::SP normals,
+                                 size_t count,
+                                 size_t stride,
+                                 size_t offset)
+  {
+    normal.buffer = normals;
+    normal.count  = count;
+    normal.stride = stride;
+    normal.offset = offset;
+    
+    for (auto device : context->getDevices()) {
+      DeviceData &dd = getDD(device);
+      dd.normalPointer = (CUdeviceptr)normals->getPointer(device) + offset;
     }
   }
   

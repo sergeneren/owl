@@ -145,7 +145,7 @@ namespace owl {
       if(trisDD.ommArrayPointer && trisDD.ommIndexPointer && tris->subdivisionLevel > 0)
       {
           // Build Opacity Micro Map
-          unsigned int numTris =  (unsigned int)(tris->index.count / 3); // Number of triangles 
+          unsigned int numTris =  (unsigned int)(tris->index.count); // Number of triangles 
 	      OptixOpacityMicromapUsageCount usage_count = {};
           usage_count.count = numTris;
 	      usage_count.format = OPTIX_OPACITY_MICROMAP_FORMAT_4_STATE;
@@ -181,7 +181,6 @@ namespace owl {
 #endif // OWL_CAN_DO_OMM
 
 #ifdef OWL_CAN_DO_DMM
-
       auto &dmm  = trisDD.dmmArray;
       if(tris->subdivisionLevel>0 && tris->displacementScale!=0.0f && dmm.d_displacementValues && dmm.d_displacementDirections)
       {
@@ -189,7 +188,7 @@ namespace owl {
 		  unsigned int numSubTrianglesPerBaseTriangle = 1 << (2 * dmmSubdivisionLevelSubTriangles);
 		  constexpr int      subTriSizeByteSize = 64;  // 64B for format OPTIX_DISPLACEMENT_MICROMAP_FORMAT_64_MICRO_TRIS_64_BYTES
 
-		  size_t numTriangles = tris->index.count / 3;
+		  size_t numTriangles = tris->index.count;
 		  size_t numSubTriangles = numTriangles * numSubTrianglesPerBaseTriangle;
 
 		  //////////////////////////////////////////////////////////////////////////
