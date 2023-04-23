@@ -170,11 +170,6 @@ namespace owl {
       ta.vertexStrideInBytes = (uint32_t)tris->vertex.stride;
       ta.numVertices         = (uint32_t)tris->vertex.count;
       ta.vertexBuffers       = d_vertices;
-      
-      ta.indexFormat         = OPTIX_INDICES_FORMAT_UNSIGNED_INT3;
-      ta.indexStrideInBytes  = (uint32_t)tris->index.stride;
-      ta.numIndexTriplets    = (uint32_t)tris->index.count;
-      ta.indexBuffer         = trisDD.indexPointer;
 
 #ifdef OWL_CAN_DO_OMM
       ta.opacityMicromap     = ommInput;
@@ -182,7 +177,7 @@ namespace owl {
 
 #ifdef OWL_CAN_DO_DMM
       auto &dmm  = trisDD.dmmArray;
-      if(tris->subdivisionLevel>0 && tris->displacementScale!=0.0f && dmm.d_displacementValues && dmm.d_displacementDirections)
+      if(tris->subdivisionLevel>0 && tris->displacementScale!=0.0f)
       {
 		  unsigned int dmmSubdivisionLevelSubTriangles = std::max(0, (int)tris->subdivisionLevel - 3);
 		  unsigned int numSubTrianglesPerBaseTriangle = 1 << (2 * dmmSubdivisionLevelSubTriangles);
@@ -229,7 +224,7 @@ namespace owl {
 		  d_descriptors.upload(descriptors);
 
 		  bi.perDisplacementMicromapDescBuffer = d_descriptors.d_pointer;
-		  bi.displacementValuesBuffer = trisDD.dmmArray.d_displacementValues;
+		  bi.displacementValuesBuffer = trisDD.dmmArray.d_displacementValues.d_pointer;
 
 		  dmm.d_dmmArrayData.alloc(bs.outputSizeInBytes);
 		  dmm.d_build_temp.alloc(bs.outputSizeInBytes);
@@ -253,7 +248,7 @@ namespace owl {
 	      // Displacement directions, 3 vectors (these do not need to be normalized!)
 	      // While the API accepts float values for convenience, OptiX uses the half format internally. Float inputs are converted to half.
 	      // So it is usually best to input half values directly to control precision.
-	      disp.vertexDirectionsBuffer = dmm.d_displacementDirections;
+	      disp.vertexDirectionsBuffer = dmm.d_displacementDirections.d_pointer;
 	      disp.vertexDirectionFormat = OPTIX_DISPLACEMENT_MICROMAP_DIRECTION_FORMAT_FLOAT3;
 
 	      // Since we create exactly one displacement micromap per triangle and we apply a displacement micromap to every triangle, there
@@ -265,10 +260,21 @@ namespace owl {
 	      disp.numDisplacementMicromapUsageCounts = 1;
 	      disp.displacementMicromapUsageCounts = &usage;
       }
+      else
+      {
+		ta.indexFormat = OPTIX_INDICES_FORMAT_UNSIGNED_INT3;
+		ta.indexStrideInBytes = (uint32_t)tris->index.stride;
+		ta.numIndexTriplets = (uint32_t)tris->index.count;
+		ta.indexBuffer = trisDD.indexPointer;
+
+        assert(ta.indexBuffer);      
+      }
+
+#else
+      assert(ta.indexBuffer);      
 #endif // OWL_CAN_DO_DMM
 
-      assert(ta.indexBuffer);
-      
+
       // -------------------------------------------------------
       // sanity check that we don't have too many prims
       // -------------------------------------------------------

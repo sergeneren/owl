@@ -72,8 +72,8 @@ namespace owl {
 	  {
 		  DeviceMemory                            d_dmmArrayData;
 		  DeviceMemory                            d_build_temp;
-		  CUdeviceptr                             d_displacementDirections = (CUdeviceptr)0;
-		  CUdeviceptr                             d_displacementValues = (CUdeviceptr)0;
+		  DeviceMemory                            d_displacementDirections;
+		  DeviceMemory                            d_displacementValues;
 	  } dmmArray;
 #endif // OWL_CAN_DO_DMM
     };

@@ -44,27 +44,9 @@ OPTIX_RAYGEN_PROGRAM(simpleRayGen)()
 OPTIX_CLOSEST_HIT_PROGRAM(TriangleMesh)()
 {
   vec3f &prd = owl::getPRD<vec3f>();
-
-  const TrianglesGeomData &self = owl::getProgramData<TrianglesGeomData>();
-  
-  // compute normal:
-  const int   primID = optixGetPrimitiveIndex();
-  const vec3i index  = self.index[primID];
-  const vec3f &A     = self.vertex[index.x];
-  const vec3f &B     = self.vertex[index.y];
-  const vec3f &C     = self.vertex[index.z];
-  const vec3f Ng     = normalize(cross(B-A,C-A));
-
   const vec2f uv     = optixGetTriangleBarycentrics();
-  const vec2f tc
-    = (1.f-uv.x-uv.y)*self.texCoord[index.x]
-    +      uv.x      *self.texCoord[index.y]
-    +           uv.y *self.texCoord[index.z];
-  vec4f texColor = tex2D<float4>(self.texture,tc.x,tc.y);
-
-  
-  const vec3f rayDir = optixGetWorldRayDirection();
-  prd = (.2f + .8f*fabs(dot(rayDir,Ng)))*vec3f(texColor);
+  vec4f texColor(uv.x,uv.y, 0, 0);
+  prd = vec3f(texColor);
 }
 
 OPTIX_MISS_PROGRAM(miss)()

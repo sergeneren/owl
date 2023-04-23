@@ -108,7 +108,7 @@ Viewer::Viewer()
 {
   // Load model
     std::string modelName(MODEL_DIR);
-    modelName += "/isoSphere.obj";
+    modelName += "/grid.obj";
     auto isoSphereModel = loadOBJ(modelName);
 
   // create a context on the first device:
@@ -157,27 +157,22 @@ Viewer::Viewer()
    : owlDeviceBufferCreate(context, OWL_FLOAT3, mesh.normal.size(),
     mesh.normal.data());
 
-
   // create the geom
   OWLGeom trianglesGeom  = owlGeomCreate(context, trianglesGeomType);
   
   // set the specific vertex/index buffers required to build the accel
-  owlTrianglesSetVertices(trianglesGeom, vertexBuffer,
-   mesh.vertex.size(), sizeof(vec3f), 0);
-  owlTrianglesSetIndices(trianglesGeom, indexBuffer,
-   mesh.index.size(), sizeof(vec3i), 0);
-  owlTrianglesSetTexCoords(trianglesGeom, texcoordBuffer, 
-                         mesh.texcoord.size(), sizeof(vec2f), 0);
-  owlTrianglesSetNormals(trianglesGeom, normalBuffer, 
-                         mesh.normal.size(), sizeof(vec3f), 0);
+  owlTrianglesSetVertices(trianglesGeom, vertexBuffer, mesh.vertex.size(), sizeof(vec3f), 0);
+  owlTrianglesSetIndices(trianglesGeom, indexBuffer, mesh.index.size(), sizeof(vec3i), 0);
+  owlTrianglesSetTexCoords(trianglesGeom, texcoordBuffer, mesh.texcoord.size(), sizeof(vec2f), 0);
+  owlTrianglesSetNormals(trianglesGeom, normalBuffer, mesh.normal.size(), sizeof(vec3f), 0);
 
   // set sbt data
   owlGeomSetBuffer(trianglesGeom, "index", indexBuffer);
   owlGeomSetBuffer(trianglesGeom, "vertex", vertexBuffer);
   owlGeomSetBuffer(trianglesGeom, "texCoord", texcoordBuffer);
 
-  owlTrianglesSetSubdivisionLevel(trianglesGeom, 5);
-  owlTrianglesSetDisplacementScale(trianglesGeom, .01f);
+  owlTrianglesSetSubdivisionLevel(trianglesGeom,5);
+  owlTrianglesSetDisplacementScale(trianglesGeom, 1.0f);
 
   // ------------------------------------------------------------------
   // create a 4x4 checkerboard texture
@@ -198,7 +193,6 @@ Viewer::Viewer()
                          OWL_TEXTURE_NEAREST,
                          OWL_TEXTURE_CLAMP);
   owlGeomSetTexture(trianglesGeom,"texture",cbTexture);
-
 
   auto texture = isoSphereModel->textures[0];
   int32_t width = texture->resolution.x;
