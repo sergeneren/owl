@@ -16,9 +16,14 @@
 
 #include "Triangles.h"
 #include "Context.h"
+
+#ifdef OWL_CAN_DO_DMM
 #include <optix_micromap.h>
+#endif // OWL_CAN_DO_DMM
 
 namespace owl {
+
+#ifdef OWL_CAN_DO_DMM
 	struct DisplacementBlock64MicroTris64B
 	{
 		// 45 displacement values, implicit vertices
@@ -54,6 +59,118 @@ namespace owl {
 			}
 		}
 	};
+
+		__global__ void computeDMMArray(
+		DisplacementBlock64MicroTris64B* d_displacementBlocks,
+		vec3f* d_displacementDirections,
+		vec2f* texCoords,
+		vec3f* normals,
+		cudaTextureObject_t texturePtr,
+		unsigned int numSubTriangles,
+		unsigned int numTriangles,
+		unsigned int dmmSubdivisionLevel,
+		const float displacementScale)
+	{
+		int tid = blockDim.x * blockIdx.x + threadIdx.x;
+		if (tid >= numSubTriangles) return;
+
+		// Offset into vertex index LUT (u major to hierarchical order) for subdivision levels 0 to 3
+		// 6  values for subdiv lvl 1
+		// 15 values for subdiv lvl 2
+		// 45 values for subdiv lvl 3
+		const uint16_t UMAJOR_TO_HIERARCHICAL_VTX_IDX_LUT_OFFSET[5] = { 0, 3, 9, 24, 69 };
+		// LUTs for levels [0,3]
+		const uint16_t UMAJOR_TO_HIERARCHICAL_VTX_IDX_LUT[69] = {
+			// level 0
+			0, 2, 1,
+			// level 1
+			0, 3, 2, 5, 4, 1,
+			// level 2
+			0, 6, 3, 12, 2, 8, 7, 14, 13, 5, 9, 4, 11, 10, 1,
+			// level 3
+			0, 15, 6, 21, 3, 39, 12, 42, 2, 17, 16, 23, 22, 41, 40, 44, 43, 8, 18, 7, 24, 14, 36, 13, 20, 19, 26, 25, 38, 37, 5, 27, 9, 33, 4, 29, 28, 35, 34, 11, 30, 10, 32, 31, 1 };
+
+		static const int SEGMENT_TO_MAJOR_VERT_IDX[9][9] = {
+				{0 , 1 , 2 , 3 , 4 , 5 , 6 , 7 , 8  },
+				{9 , 10, 11, 12, 13, 14, 15, 16, -1 },
+				{17, 18, 19, 20, 21, 22, 23, -1, -1 },
+				{24, 25, 26, 27, 28, 29, -1, -1, -1 },
+				{30, 31, 32, 33, 34, -1, -1, -1, -1 },
+				{35, 36, 37, 38, -1, -1, -1, -1, -1 },
+				{39, 40, 41, -1, -1, -1, -1, -1, -1 },
+				{42, 43, -1, -1, -1, -1, -1, -1, -1 },
+				{44, -1, -1, -1, -1, -1, -1, -1, -1 }
+			};
+
+		unsigned int numSubTrianglesPerBaseTriangle = numSubTriangles / numTriangles;
+
+		unsigned int triIdx = tid / numSubTrianglesPerBaseTriangle;
+
+		unsigned int vtxIdx0 = triIdx * 3 + 0;
+		unsigned int vtxIdx1 = triIdx * 3 + 1;
+		unsigned int vtxIdx2 = triIdx * 3 + 2;
+
+		vec2f baseUV0 = texCoords[vtxIdx0];
+		vec2f baseUV1 = texCoords[vtxIdx1];
+		vec2f baseUV2 = texCoords[vtxIdx2];
+
+		// Set displacement directions per index
+		{
+			if (normals)
+			{
+				vec3f normal = normals[vtxIdx0];
+				d_displacementDirections[vtxIdx0] = normal * displacementScale;
+
+				normal = normals[vtxIdx1];
+				d_displacementDirections[vtxIdx1] = normal * displacementScale;
+
+				normal = normals[vtxIdx2];
+				d_displacementDirections[vtxIdx2] = normal * displacementScale;
+			}
+			else {
+				vec3f direction(0.0f, displacementScale, 0.0f);
+				d_displacementDirections[vtxIdx0] = direction;
+				d_displacementDirections[vtxIdx1] = direction;
+				d_displacementDirections[vtxIdx2] = direction;
+			}
+		}
+
+		// Set micro triangle micro mesh array
+		float2 subTriBary0, subTriBary1, subTriBary2;
+		unsigned int subTriIdx = tid % numSubTrianglesPerBaseTriangle;
+		const unsigned int dmmSubdivisionLevelSubTriangles = max(0, (int)dmmSubdivisionLevel - 3);
+		optixMicromapIndexToBaseBarycentrics(subTriIdx, dmmSubdivisionLevelSubTriangles, subTriBary0, subTriBary1, subTriBary2);
+
+		vec2f subTriUV0 = (1.0f - subTriBary0.x - subTriBary0.y) * baseUV0 + subTriBary0.x * baseUV1 + subTriBary0.y * baseUV2;
+		vec2f subTriUV1 = (1.0f - subTriBary1.x - subTriBary1.y) * baseUV0 + subTriBary1.x * baseUV1 + subTriBary1.y * baseUV2;
+		vec2f subTriUV2 = (1.0f - subTriBary2.x - subTriBary2.y) * baseUV0 + subTriBary2.x * baseUV1 + subTriBary2.y * baseUV2;
+
+		DisplacementBlock64MicroTris64B block;
+
+		unsigned perBlockSubdivisionLevel = min(3u, dmmSubdivisionLevel);
+		// fill the displacement block by looping over the vertices in u-major order and use a lookup table to set the corresponding bits in the displacement block
+		unsigned numSegments = 1 << perBlockSubdivisionLevel;
+		unsigned startVertex = UMAJOR_TO_HIERARCHICAL_VTX_IDX_LUT_OFFSET[perBlockSubdivisionLevel];
+		unsigned int uMajorVertIdx = 0;
+		for (unsigned iu = 0; iu < numSegments + 1; ++iu)
+		{
+			for (unsigned iv = 0; iv < numSegments + 1 - iu; ++iv)
+			{
+				vec2f microVertexBary = { float(iu) / float(numSegments), float(iv) / float(numSegments) };
+				vec2f microVertexUV = (1.0f - microVertexBary.x - microVertexBary.y) * subTriUV0 + microVertexBary.x * subTriUV1 + microVertexBary.y * subTriUV2;
+
+				float4 textureVal = tex2D<float4>(texturePtr, microVertexUV.x, microVertexUV.y);
+				uint16_t disp = int(__saturatef(textureVal.x) * 0x7FF);
+
+				uMajorVertIdx = SEGMENT_TO_MAJOR_VERT_IDX[iu][iv];
+				block.setDisplacement(UMAJOR_TO_HIERARCHICAL_VTX_IDX_LUT[startVertex + uMajorVertIdx], disp);
+				uMajorVertIdx++;
+			}
+		}
+
+		d_displacementBlocks[tid] = block;
+	}
+	#endif // OWL_CAN_DO_DMM
 
 	__device__ __inline__ vec2f computeUV(vec2f bary, vec2f uv0, vec2f uv1, vec2f uv2)
 	{
@@ -169,117 +286,6 @@ namespace owl {
 		*/
 	}
 
-	__global__ void computeDMMArray(
-		DisplacementBlock64MicroTris64B* d_displacementBlocks,
-		vec3f* d_displacementDirections,
-		vec2f* texCoords,
-		vec3f* normals,
-		cudaTextureObject_t texturePtr,
-		unsigned int numSubTriangles,
-		unsigned int numTriangles,
-		unsigned int dmmSubdivisionLevel,
-		const float displacementScale)
-	{
-		int tid = blockDim.x * blockIdx.x + threadIdx.x;
-		if (tid >= numSubTriangles) return;
-
-		// Offset into vertex index LUT (u major to hierarchical order) for subdivision levels 0 to 3
-		// 6  values for subdiv lvl 1
-		// 15 values for subdiv lvl 2
-		// 45 values for subdiv lvl 3
-		const uint16_t UMAJOR_TO_HIERARCHICAL_VTX_IDX_LUT_OFFSET[5] = { 0, 3, 9, 24, 69 };
-		// LUTs for levels [0,3]
-		const uint16_t UMAJOR_TO_HIERARCHICAL_VTX_IDX_LUT[69] = {
-			// level 0
-			0, 2, 1,
-			// level 1
-			0, 3, 2, 5, 4, 1,
-			// level 2
-			0, 6, 3, 12, 2, 8, 7, 14, 13, 5, 9, 4, 11, 10, 1,
-			// level 3
-			0, 15, 6, 21, 3, 39, 12, 42, 2, 17, 16, 23, 22, 41, 40, 44, 43, 8, 18, 7, 24, 14, 36, 13, 20, 19, 26, 25, 38, 37, 5, 27, 9, 33, 4, 29, 28, 35, 34, 11, 30, 10, 32, 31, 1 };
-
-		static const int SEGMENT_TO_MAJOR_VERT_IDX[9][9] = {
-				{0 , 1 , 2 , 3 , 4 , 5 , 6 , 7 , 8  },
-				{9 , 10, 11, 12, 13, 14, 15, 16, -1 },
-				{17, 18, 19, 20, 21, 22, 23, -1, -1 },
-				{24, 25, 26, 27, 28, 29, -1, -1, -1 },
-				{30, 31, 32, 33, 34, -1, -1, -1, -1 },
-				{35, 36, 37, 38, -1, -1, -1, -1, -1 },
-				{39, 40, 41, -1, -1, -1, -1, -1, -1 },
-				{42, 43, -1, -1, -1, -1, -1, -1, -1 },
-				{44, -1, -1, -1, -1, -1, -1, -1, -1 }
-			};
-
-		unsigned int numSubTrianglesPerBaseTriangle = numSubTriangles / numTriangles;
-
-		unsigned int triIdx = tid / numSubTrianglesPerBaseTriangle;
-
-		unsigned int vtxIdx0 = triIdx * 3 + 0;
-		unsigned int vtxIdx1 = triIdx * 3 + 1;
-		unsigned int vtxIdx2 = triIdx * 3 + 2;
-
-		vec2f baseUV0 = texCoords[vtxIdx0];
-		vec2f baseUV1 = texCoords[vtxIdx1];
-		vec2f baseUV2 = texCoords[vtxIdx2];
-
-		// Set displacement directions per index
-		{
-			if (normals)
-			{
-				vec3f normal = normals[vtxIdx0];
-				d_displacementDirections[vtxIdx0] = normal * displacementScale;
-
-				normal = normals[vtxIdx1];
-				d_displacementDirections[vtxIdx1] = normal * displacementScale;
-
-				normal = normals[vtxIdx2];
-				d_displacementDirections[vtxIdx2] = normal * displacementScale;
-			}
-			else {
-				vec3f direction(0.0f, displacementScale, 0.0f);
-				d_displacementDirections[vtxIdx0] = direction;
-				d_displacementDirections[vtxIdx1] = direction;
-				d_displacementDirections[vtxIdx2] = direction;
-			}
-		}
-
-		// Set micro triangle micro mesh array
-		float2 subTriBary0, subTriBary1, subTriBary2;
-		unsigned int subTriIdx = tid % numSubTrianglesPerBaseTriangle;
-		const unsigned int dmmSubdivisionLevelSubTriangles = max(0, (int)dmmSubdivisionLevel - 3);
-		optixMicromapIndexToBaseBarycentrics(subTriIdx, dmmSubdivisionLevelSubTriangles, subTriBary0, subTriBary1, subTriBary2);
-
-		vec2f subTriUV0 = (1.0f - subTriBary0.x - subTriBary0.y) * baseUV0 + subTriBary0.x * baseUV1 + subTriBary0.y * baseUV2;
-		vec2f subTriUV1 = (1.0f - subTriBary1.x - subTriBary1.y) * baseUV0 + subTriBary1.x * baseUV1 + subTriBary1.y * baseUV2;
-		vec2f subTriUV2 = (1.0f - subTriBary2.x - subTriBary2.y) * baseUV0 + subTriBary2.x * baseUV1 + subTriBary2.y * baseUV2;
-
-		DisplacementBlock64MicroTris64B block;
-
-		unsigned perBlockSubdivisionLevel = min(3u, dmmSubdivisionLevel);
-		// fill the displacement block by looping over the vertices in u-major order and use a lookup table to set the corresponding bits in the displacement block
-		unsigned numSegments = 1 << perBlockSubdivisionLevel;
-		unsigned startVertex = UMAJOR_TO_HIERARCHICAL_VTX_IDX_LUT_OFFSET[perBlockSubdivisionLevel];
-		unsigned int uMajorVertIdx = 0;
-		for (unsigned iu = 0; iu < numSegments + 1; ++iu)
-		{
-			for (unsigned iv = 0; iv < numSegments + 1 - iu; ++iv)
-			{
-				vec2f microVertexBary = { float(iu) / float(numSegments), float(iv) / float(numSegments) };
-				vec2f microVertexUV = (1.0f - microVertexBary.x - microVertexBary.y) * subTriUV0 + microVertexBary.x * subTriUV1 + microVertexBary.y * subTriUV2;
-
-				float4 textureVal = tex2D<float4>(texturePtr, microVertexUV.x, microVertexUV.y);
-				uint16_t disp = int(__saturatef(textureVal.x) * 0x7FF);
-
-				uMajorVertIdx = SEGMENT_TO_MAJOR_VERT_IDX[iu][iv];
-				block.setDisplacement(UMAJOR_TO_HIERARCHICAL_VTX_IDX_LUT[startVertex + uMajorVertIdx], disp);
-				uMajorVertIdx++;
-			}
-		}
-
-		d_displacementBlocks[tid] = block;
-	}
-
 	// ------------------------------------------------------------------
 	// TrianglesGeomType
 	// ------------------------------------------------------------------
@@ -362,6 +368,7 @@ namespace owl {
 	/*! call a cuda kernel that computes the Opacity Micro Map */
 	void TrianglesGeom::computeOMM(Texture& tex)
 	{
+#ifdef OWL_CAN_DO_OMM
 		assert(texCoord.buffer);
 		if (subdivisionLevel > 0)
 		{
@@ -395,11 +402,13 @@ namespace owl {
 				dd.ommIndexPointer = d_omm_indices.d_pointer;
 			}
 		}
+#endif // OWL_CAN_DO_OMM
 	}
 
 	/*! call a cuda kernel that computes the displacement micro mesh buffers */
 	void TrianglesGeom::computeDMM(Texture::SP tex)
 	{
+#ifdef OWL_CAN_DO_DMM
 		assert(texCoord.buffer);
 
 		if (displacementScale != 0.0f && subdivisionLevel > 0)
@@ -462,6 +471,7 @@ namespace owl {
 				}
 			}
 		}
+#endif // OWL_CAN_DO_DMM
 	}
 
 	RegisteredObject::DeviceData::SP TrianglesGeom::createOn(const DeviceContext::SP& device)

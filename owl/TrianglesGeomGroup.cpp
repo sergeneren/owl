@@ -271,6 +271,11 @@ namespace owl {
       }
 
 #else
+	  ta.indexFormat = OPTIX_INDICES_FORMAT_UNSIGNED_INT3;
+	  ta.indexStrideInBytes = (uint32_t)tris->index.stride;
+	  ta.numIndexTriplets = (uint32_t)tris->index.count;
+	  ta.indexBuffer = trisDD.indexPointer;
+
       assert(ta.indexBuffer);      
 #endif // OWL_CAN_DO_DMM
 
