@@ -1207,6 +1207,26 @@ owlTrianglesSetDMM(OWLGeom   _triangles,
   triangles->computeDMM(dispTex);
 }
 
+OWL_API void
+owlTrianglesSetOMM(OWLGeom   _triangles,
+	OWLTexture _dispTex)
+{
+	LOG_API_CALL();
+
+	assert(_triangles);
+	assert(_dispTex);
+
+	TrianglesGeom::SP triangles
+		= ((APIHandle*)_triangles)->get<TrianglesGeom>();
+	assert(triangles);
+
+	Texture::SP dispTex
+		= ((APIHandle*)_dispTex)->get<Texture>();
+	assert(dispTex);
+
+	triangles->computeOMM(dispTex);
+}
+
 OWL_API void 
 owlTrianglesSetSubdivisionLevel(OWLGeom _triangles,
 	unsigned int level)

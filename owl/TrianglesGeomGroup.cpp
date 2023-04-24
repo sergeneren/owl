@@ -139,27 +139,6 @@ namespace owl {
                   "triangles geom group");
       TrianglesGeom::DeviceData &trisDD = tris->getDD(device);
 
-#ifdef OWL_CAN_DO_OMM
-      // TODO build deviceData omm device pointers 
-      OptixBuildInputOpacityMicromap ommInput = {};
-      if(trisDD.ommArrayPointer && trisDD.ommIndexPointer && tris->subdivisionLevel > 0)
-      {
-          // Build Opacity Micro Map
-          unsigned int numTris =  (unsigned int)(tris->index.count); // Number of triangles 
-	      OptixOpacityMicromapUsageCount usage_count = {};
-          usage_count.count = numTris;
-	      usage_count.format = OPTIX_OPACITY_MICROMAP_FORMAT_4_STATE;
-	      usage_count.subdivisionLevel = tris->subdivisionLevel;
-               
-	      ommInput.indexingMode = OPTIX_OPACITY_MICROMAP_ARRAY_INDEXING_MODE_INDEXED;
-	      ommInput.opacityMicromapArray = trisDD.ommArrayPointer;
-	      ommInput.indexBuffer = trisDD.ommIndexPointer;
-	      ommInput.indexSizeInBytes = 2;
-	      ommInput.numMicromapUsageCounts = 1;
-	      ommInput.micromapUsageCounts = &usage_count;
-      }
-#endif // OWL_CAN_DO_OMM
-      
       CUdeviceptr     *d_vertices    = trisDD.vertexPointers.data();
       assert(d_vertices);
       OptixBuildInput &triangleInput = triangleInputs[childID];
@@ -172,12 +151,91 @@ namespace owl {
       ta.vertexBuffers       = d_vertices;
 
 #ifdef OWL_CAN_DO_OMM
-      ta.opacityMicromap     = ommInput;
-#endif // OWL_CAN_DO_OMM
+      // TODO build deviceData omm device pointers 
+      OptixBuildInputOpacityMicromap ommInput = {};
+      if(!trisDD.ommIndexPointer.empty() && tris->subdivisionLevel > 0)
+      {
+		  unsigned int numSubTrianglesPerBaseTriangle = 1 << (2 * tris->subdivisionLevel);
+          unsigned int bitsPerState = 2;
 
+		  size_t numTriangles = tris->index.count;
+		  size_t numSubTriangles = numTriangles * numSubTrianglesPerBaseTriangle;
+
+		  OptixOpacityMicromapHistogramEntry histogram{};
+		  histogram.count = numTriangles;
+		  histogram.format = OPTIX_OPACITY_MICROMAP_FORMAT_4_STATE;
+		  histogram.subdivisionLevel = tris->subdivisionLevel;
+
+		  OptixOpacityMicromapArrayBuildInput build_input = {};
+		  build_input.flags = OPTIX_OPACITY_MICROMAP_FLAG_PREFER_FAST_TRACE;
+		  build_input.inputBuffer = trisDD.ommIndexPointer.d_pointer;
+		  build_input.numMicromapHistogramEntries = 1;
+		  build_input.micromapHistogramEntries = &histogram;
+
+		  OptixMicromapBufferSizes buffer_sizes = {};
+		  OPTIX_CHECK(optixOpacityMicromapArrayComputeMemoryUsage(device->optixContext, &build_input, &buffer_sizes));
+          
+		  // Two OMMs, both with the same layout
+          std::vector<OptixOpacityMicromapDesc> descriptors(numTriangles);
+          for(unsigned int i=0; i < numTriangles; i++)
+          {
+              descriptors[i] = {
+                  // byteOffset for triangles                                       
+                  i * (numSubTrianglesPerBaseTriangle / 8 * bitsPerState) ,
+                  (unsigned short)tris->subdivisionLevel,
+                  OPTIX_OPACITY_MICROMAP_FORMAT_4_STATE
+              };
+          }
+		  DeviceMemory d_descriptors;
+		  d_descriptors.upload(descriptors);
+
+		  build_input.perMicromapDescBuffer = d_descriptors.d_pointer;
+		  build_input.perMicromapDescStrideInBytes = 0;
+
+		  DeviceMemory d_temp_buffer;
+		  d_temp_buffer.alloc(buffer_sizes.tempSizeInBytes);
+		  trisDD.ommArray.alloc(buffer_sizes.outputSizeInBytes);
+
+		  OptixMicromapBuffers micromap_buffers = {};
+		  micromap_buffers.output =  trisDD.ommArray.d_pointer;
+		  micromap_buffers.outputSizeInBytes = buffer_sizes.outputSizeInBytes;
+		  micromap_buffers.temp = d_temp_buffer.d_pointer;
+		  micromap_buffers.tempSizeInBytes = buffer_sizes.tempSizeInBytes;
+
+		  OPTIX_CHECK(optixOpacityMicromapArrayBuild(device->optixContext, 0, &build_input, &micromap_buffers));
+
+          trisDD.ommIndexPointer.free();
+          d_temp_buffer.free();
+          d_descriptors.free();
+
+		  OptixOpacityMicromapUsageCount usage_count = {};
+		  usage_count.count = numTriangles;
+		  // simple 2 state as the OMM perfectly matches the checkerboard pattern. 
+		  // 'unknown' states that are resolved in the anyhit program are not needed.
+		  usage_count.format = OPTIX_OPACITY_MICROMAP_FORMAT_4_STATE;
+		  usage_count.subdivisionLevel = tris->subdivisionLevel;
+
+          std::vector<unsigned int> omm_indices(numTriangles);
+          for (unsigned int i = 0; i < numTriangles; i++)
+              omm_indices[i] = i;
+
+		  DeviceMemory  d_omm_indices;
+          d_omm_indices.upload(omm_indices);
+
+		  ommInput.indexingMode = OPTIX_OPACITY_MICROMAP_ARRAY_INDEXING_MODE_INDEXED;
+		  ommInput.opacityMicromapArray =  trisDD.ommArray.d_pointer;
+		  ommInput.indexBuffer = d_omm_indices.d_pointer;
+		  ommInput.indexSizeInBytes = 2;
+		  ommInput.numMicromapUsageCounts = 1;
+		  ommInput.micromapUsageCounts = &usage_count;
+
+          ta.opacityMicromap     = ommInput;
+      }
+#endif // OWL_CAN_DO_OMM
+      
 #ifdef OWL_CAN_DO_DMM
       auto &dmm  = trisDD.dmmArray;
-      if(tris->subdivisionLevel>0 && tris->displacementScale!=0.0f)
+      if(tris->subdivisionLevel>0 && tris->displacementScale!=0.0f && !dmm.d_displacementValues.empty())
       {
 		  unsigned int dmmSubdivisionLevelSubTriangles = std::max(0, (int)tris->subdivisionLevel - 3);
 		  unsigned int numSubTrianglesPerBaseTriangle = 1 << (2 * dmmSubdivisionLevelSubTriangles);
@@ -262,12 +320,12 @@ namespace owl {
       }
       else
       {
-		ta.indexFormat = OPTIX_INDICES_FORMAT_UNSIGNED_INT3;
-		ta.indexStrideInBytes = (uint32_t)tris->index.stride;
-		ta.numIndexTriplets = (uint32_t)tris->index.count;
-		ta.indexBuffer = trisDD.indexPointer;
-
-        assert(ta.indexBuffer);      
+		  ta.indexFormat = OPTIX_INDICES_FORMAT_UNSIGNED_INT3;
+		  ta.indexStrideInBytes = (uint32_t)tris->index.stride;
+		  ta.numIndexTriplets = (uint32_t)tris->index.count;
+		  ta.indexBuffer = trisDD.indexPointer;
+          
+		  assert(ta.indexBuffer);
       }
 
 #else

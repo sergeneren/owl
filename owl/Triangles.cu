@@ -17,11 +17,67 @@
 #include "Triangles.h"
 #include "Context.h"
 
-#ifdef OWL_CAN_DO_DMM
+#if defined(OWL_CAN_DO_DMM) || defined(OWL_CAN_DO_OMM)
 #include <optix_micromap.h>
 #endif // OWL_CAN_DO_DMM
 
 namespace owl {
+
+#ifdef OWL_CAN_DO_OMM
+	__global__ void computeOMMArray(
+		unsigned short* d_ommIndices,
+		vec2f* texCoords,
+		cudaTextureObject_t texturePtr,
+		size_t numSubTriangles,
+		size_t numTriangles,
+		unsigned int subdivisionLevel)
+	{
+		int tid = blockDim.x * blockIdx.x + threadIdx.x;
+		if (tid >= numSubTriangles) return;
+
+		unsigned int numSubTrianglesPerBaseTriangle = numSubTriangles / numTriangles;
+
+		unsigned int triIdx = tid / numSubTrianglesPerBaseTriangle;
+		unsigned int bitsPerState = 2;
+
+		unsigned int vtxIdx0 = triIdx * 3 + 0;
+		unsigned int vtxIdx1 = triIdx * 3 + 1;
+		unsigned int vtxIdx2 = triIdx * 3 + 2;
+
+		vec2f baseUV0 = texCoords[vtxIdx0];
+		vec2f baseUV1 = texCoords[vtxIdx1];
+		vec2f baseUV2 = texCoords[vtxIdx2];
+
+		// Set micro triangle micro mesh array
+		float2 subTriBary0, subTriBary1, subTriBary2;
+		unsigned int subTriIdx = tid % numSubTrianglesPerBaseTriangle;
+		optixMicromapIndexToBaseBarycentrics(subTriIdx, subdivisionLevel, subTriBary0, subTriBary1, subTriBary2);
+
+		vec2f subTriUV0 = (1.0f - subTriBary0.x - subTriBary0.y) * baseUV0 + subTriBary0.x * baseUV1 + subTriBary0.y * baseUV2;
+		vec2f subTriUV1 = (1.0f - subTriBary1.x - subTriBary1.y) * baseUV0 + subTriBary1.x * baseUV1 + subTriBary1.y * baseUV2;
+		vec2f subTriUV2 = (1.0f - subTriBary2.x - subTriBary2.y) * baseUV0 + subTriBary2.x * baseUV1 + subTriBary2.y * baseUV2;
+
+		float4 textureVal0 = tex2D<float4>(texturePtr, subTriUV0.x, subTriUV0.y);
+		float4 textureVal1 = tex2D<float4>(texturePtr, subTriUV1.x, subTriUV1.y);
+		float4 textureVal2 = tex2D<float4>(texturePtr, subTriUV2.x, subTriUV2.y);
+
+		float sumAlpha = (textureVal0.y + textureVal1.y + textureVal2.y) / 3.0f;
+
+		int opacity = 1;
+
+		if (sumAlpha < 0.25f)
+			opacity = OPTIX_OPACITY_MICROMAP_STATE_TRANSPARENT;
+		else if(sumAlpha < 0.5f)
+			opacity = OPTIX_OPACITY_MICROMAP_STATE_UNKNOWN_TRANSPARENT;
+		else if(sumAlpha < 0.75f)
+			opacity = OPTIX_OPACITY_MICROMAP_STATE_UNKNOWN_OPAQUE;
+		else
+			opacity = OPTIX_OPACITY_MICROMAP_STATE_OPAQUE;
+
+		int ommInputIdx = triIdx * (numSubTrianglesPerBaseTriangle / 16 * bitsPerState) + (subTriIdx / 8);
+		d_ommIndices[ommInputIdx] = (unsigned short)opacity;
+	}
+#endif // OWL_CAN_DO_OMM
 
 #ifdef OWL_CAN_DO_DMM
 	struct DisplacementBlock64MicroTris64B
@@ -60,14 +116,14 @@ namespace owl {
 		}
 	};
 
-		__global__ void computeDMMArray(
+	__global__ void computeDMMArray(
 		DisplacementBlock64MicroTris64B* d_displacementBlocks,
 		vec3f* d_displacementDirections,
 		vec2f* texCoords,
 		vec3f* normals,
 		cudaTextureObject_t texturePtr,
-		unsigned int numSubTriangles,
-		unsigned int numTriangles,
+		size_t numSubTriangles,
+		size_t numTriangles,
 		unsigned int dmmSubdivisionLevel,
 		const float displacementScale)
 	{
@@ -89,18 +145,6 @@ namespace owl {
 			0, 6, 3, 12, 2, 8, 7, 14, 13, 5, 9, 4, 11, 10, 1,
 			// level 3
 			0, 15, 6, 21, 3, 39, 12, 42, 2, 17, 16, 23, 22, 41, 40, 44, 43, 8, 18, 7, 24, 14, 36, 13, 20, 19, 26, 25, 38, 37, 5, 27, 9, 33, 4, 29, 28, 35, 34, 11, 30, 10, 32, 31, 1 };
-
-		static const int SEGMENT_TO_MAJOR_VERT_IDX[9][9] = {
-				{0 , 1 , 2 , 3 , 4 , 5 , 6 , 7 , 8  },
-				{9 , 10, 11, 12, 13, 14, 15, 16, -1 },
-				{17, 18, 19, 20, 21, 22, 23, -1, -1 },
-				{24, 25, 26, 27, 28, 29, -1, -1, -1 },
-				{30, 31, 32, 33, 34, -1, -1, -1, -1 },
-				{35, 36, 37, 38, -1, -1, -1, -1, -1 },
-				{39, 40, 41, -1, -1, -1, -1, -1, -1 },
-				{42, 43, -1, -1, -1, -1, -1, -1, -1 },
-				{44, -1, -1, -1, -1, -1, -1, -1, -1 }
-			};
 
 		unsigned int numSubTrianglesPerBaseTriangle = numSubTriangles / numTriangles;
 
@@ -162,7 +206,6 @@ namespace owl {
 				float4 textureVal = tex2D<float4>(texturePtr, microVertexUV.x, microVertexUV.y);
 				uint16_t disp = int(__saturatef(textureVal.x) * 0x7FF);
 
-				uMajorVertIdx = SEGMENT_TO_MAJOR_VERT_IDX[iu][iv];
 				block.setDisplacement(UMAJOR_TO_HIERARCHICAL_VTX_IDX_LUT[startVertex + uMajorVertIdx], disp);
 				uMajorVertIdx++;
 			}
@@ -170,7 +213,8 @@ namespace owl {
 
 		d_displacementBlocks[tid] = block;
 	}
-	#endif // OWL_CAN_DO_DMM
+#endif // OWL_CAN_DO_DMM
+
 
 	__device__ __inline__ vec2f computeUV(vec2f bary, vec2f uv0, vec2f uv1, vec2f uv2)
 	{
@@ -366,15 +410,18 @@ namespace owl {
 	}
 
 	/*! call a cuda kernel that computes the Opacity Micro Map */
-	void TrianglesGeom::computeOMM(Texture& tex)
+	void TrianglesGeom::computeOMM(Texture::SP tex)
 	{
 #ifdef OWL_CAN_DO_OMM
 		assert(texCoord.buffer);
 		if (subdivisionLevel > 0)
 		{
-			unsigned int NUM_MICRO_TRIS = 1 << (subdivisionLevel * 2);
-			unsigned int BITS_PER_STATE = 2;
-			size_t NUM_TRIS = index.count / 3;
+			const unsigned int numSubTrianglesPerBaseTriangle = 1 << (2 * subdivisionLevel);
+
+			size_t numTriangles = index.count;
+			size_t numSubTriangles = numTriangles * numSubTrianglesPerBaseTriangle;
+
+			unsigned int bitsPerState = 2;
 
 			int numThreads = 1024;
 			int numBlocks = int((texCoord.count + numThreads - 1) / numThreads);
@@ -384,22 +431,34 @@ namespace owl {
 			assert(device);
 			SetActiveGPU forLifeTime(device);
 
-			auto texDD = tex.getObject(device->cudaDeviceID);
+			auto texDD = tex->getObject(device->cudaDeviceID);
 
-			// Create omm indices per triangle
-			std::vector<unsigned int> omm_indices(NUM_TRIS);
-			for (unsigned int i = 0; i < NUM_TRIS; i++)
-				omm_indices.push_back(i);
+			if (texDD)
+			{
+				DeviceMemory d_ommmIndices;
+				d_ommmIndices.alloc((size_t)sizeof(unsigned short) * numTriangles * numSubTrianglesPerBaseTriangle / 16 * bitsPerState);
 
-			const size_t omm_indices_size_bytes = omm_indices.size() * sizeof(unsigned int);
+				auto texCoordsDD = texCoord.buffer->getDD(device);
+				
+				computeOMMArray << <numBlocks, numThreads >> > (
+					(unsigned short*)d_ommmIndices.get()
+					, (vec2f*)texCoordsDD.d_pointer
+					, texDD
+					, numSubTriangles
+					, numTriangles
+					, subdivisionLevel
+					);
+				OWL_CUDA_SYNC_CHECK();
+				
+				// Create omm indices per triangle
+				std::vector<unsigned short> omm_indices( numTriangles * numSubTrianglesPerBaseTriangle / 16 * bitsPerState );
+				d_ommmIndices.download(omm_indices.data());
 
-			// Upload the array and indices to each device
-			for (auto device : context->getDevices()) {
-				DeviceData& dd = getDD(device);
-
-				DeviceMemory d_omm_indices;
-				d_omm_indices.upload<unsigned int>(omm_indices);
-				dd.ommIndexPointer = d_omm_indices.d_pointer;
+				// Upload the array and indices to each device
+				for (auto device : context->getDevices()) {
+					DeviceData& dd = getDD(device);
+					dd.ommIndexPointer.upload(omm_indices);
+				}
 			}
 		}
 #endif // OWL_CAN_DO_OMM
@@ -418,7 +477,6 @@ namespace owl {
 			// Level 4 requires 4 sub triangles, level 5 requires 16 sub triangles.
 			const unsigned int dmmSubdivisionLevelSubTriangles = std::max(0, (int)subdivisionLevel - 3);
 			const unsigned int numSubTrianglesPerBaseTriangle = 1 << (2 * dmmSubdivisionLevelSubTriangles);
-			constexpr int      subTriSizeByteSize = 64;  // 64B for format OPTIX_DISPLACEMENT_MICROMAP_FORMAT_64_MICRO_TRIS_64_BYTES
 
 			size_t numTriangles = index.count;
 			size_t numSubTriangles = numTriangles * numSubTrianglesPerBaseTriangle;
@@ -431,41 +489,40 @@ namespace owl {
 
 			if (texDD)
 			{
-					DeviceData& dd = getDD(device);
-
-					DeviceMemory d_displacementValues;
-					DeviceMemory d_displacementDirections;
+				DeviceMemory d_displacementValues;
+				DeviceMemory d_displacementDirections;
         
-					int numThreads = 256;
-					int numBlocks = int((numSubTriangles + numThreads - 1) / numThreads);
+				int numThreads = 1024;
+				int numBlocks = int((numSubTriangles + numThreads - 1) / numThreads);
 
-					d_displacementValues.alloc(numSubTriangles * sizeof(DisplacementBlock64MicroTris64B));
-					d_displacementDirections.alloc(vertex.count * sizeof(vec3f));
+				d_displacementValues.alloc(numSubTriangles * sizeof(DisplacementBlock64MicroTris64B));
+				d_displacementDirections.alloc(vertex.count * sizeof(vec3f));
 
-					auto texCoordsDD = texCoord.buffer->getDD(device);
-					auto normalsDD = normal.buffer->getDD(device);
+				auto texCoordsDD = texCoord.buffer->getDD(device);
+				auto normalsDD = normal.buffer->getDD(device);
 
-					computeDMMArray << <numBlocks, numThreads >> > (
-						(DisplacementBlock64MicroTris64B*)d_displacementValues.get()
-						, (vec3f*)d_displacementDirections.get()
-						, (vec2f*)texCoordsDD.d_pointer
-						, (vec3f*)normalsDD.d_pointer
-						, texDD
-						, numSubTriangles
-						, numTriangles
-						, subdivisionLevel
-						, displacementScale
-						);
-					OWL_CUDA_SYNC_CHECK();
+				computeDMMArray << <numBlocks, numThreads >> > (
+					(DisplacementBlock64MicroTris64B*)d_displacementValues.get()
+					, (vec3f*)d_displacementDirections.get()
+					, (vec2f*)texCoordsDD.d_pointer
+					, (vec3f*)normalsDD.d_pointer
+					, texDD
+					, numSubTriangles
+					, numTriangles
+					, subdivisionLevel
+					, displacementScale
+					);
+				OWL_CUDA_SYNC_CHECK();
 				
-					std::vector<DisplacementBlock64MicroTris64B> displacementValues(numSubTriangles);
-					d_displacementValues.download(displacementValues.data());
+				std::vector<DisplacementBlock64MicroTris64B> displacementValues(numSubTriangles);
+				d_displacementValues.download(displacementValues.data());
 
-					std::vector<vec3f> displacementDirections(vertex.count);
-					d_displacementDirections.download(displacementDirections.data());
+				std::vector<vec3f> displacementDirections(vertex.count);
+				d_displacementDirections.download(displacementDirections.data());
 
 				for (auto device : context->getDevices())
 				{
+					DeviceData& dd = getDD(device);
 					dd.dmmArray.d_displacementDirections.upload(displacementDirections);
 					dd.dmmArray.d_displacementValues.upload(displacementValues);
 				}

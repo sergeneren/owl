@@ -908,6 +908,9 @@ OWL_API void owlTrianglesSetNormals(OWLGeom triangles,
 OWL_API void owlTrianglesSetDMM(OWLGeom triangles,
                                 OWLTexture displacementTexture);
 
+OWL_API void owlTrianglesSetOMM(OWLGeom triangles,
+                                OWLTexture displacementTexture);
+
 OWL_API void owlTrianglesSetSubdivisionLevel(OWLGeom triangles,
                                 unsigned int level);
 

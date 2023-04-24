@@ -63,17 +63,17 @@ namespace owl {
       CUdeviceptr texCoordPointer  = (CUdeviceptr)0;
 
 #ifdef OWL_CAN_DO_OMM
-      CUdeviceptr ommArrayPointer  = (CUdeviceptr)0;
-      CUdeviceptr ommIndexPointer  = (CUdeviceptr)0;
+      DeviceMemory ommArray;
+      DeviceMemory ommIndexPointer;
 #endif
 
 #ifdef OWL_CAN_DO_DMM
 	  struct DmmArray
 	  {
-		  DeviceMemory                            d_dmmArrayData;
-		  DeviceMemory                            d_build_temp;
-		  DeviceMemory                            d_displacementDirections;
-		  DeviceMemory                            d_displacementValues;
+		  DeviceMemory d_dmmArrayData;
+		  DeviceMemory d_build_temp;
+		  DeviceMemory d_displacementDirections;
+		  DeviceMemory d_displacementValues;
 	  } dmmArray;
 #endif // OWL_CAN_DO_DMM
     };
@@ -120,7 +120,7 @@ namespace owl {
     void computeBounds(box3f bounds[2]);
 
     /*! call a cuda kernel that computes the opacity micro maps */
-    void computeOMM(Texture& tex);
+    void computeOMM(Texture::SP tex);
 
     /*! call a cuda kernel that computes the displacement micro mesh buffers */
     void computeDMM(Texture::SP tex);
