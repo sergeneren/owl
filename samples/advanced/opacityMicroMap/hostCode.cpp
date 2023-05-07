@@ -171,7 +171,7 @@ Viewer::Viewer()
   owlGeomSetBuffer(trianglesGeom, "vertex", vertexBuffer);
   owlGeomSetBuffer(trianglesGeom, "texCoord", texcoordBuffer);
 
-  owlTrianglesSetSubdivisionLevel(trianglesGeom,2);
+  owlTrianglesSetSubdivisionLevel(trianglesGeom,5);
 
   // ------------------------------------------------------------------
   // create a 4x4 checkerboard texture

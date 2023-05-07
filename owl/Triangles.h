@@ -65,6 +65,7 @@ namespace owl {
 #ifdef OWL_CAN_DO_OMM
       DeviceMemory ommArray;
       DeviceMemory ommIndexPointer;
+      DeviceMemory ommIndices;
 #endif
 
 #ifdef OWL_CAN_DO_DMM
