@@ -16,6 +16,7 @@
 
 #include "deviceCode.h"
 #include <optix_device.h>
+#include <optix_micromap.h>
 
 OPTIX_RAYGEN_PROGRAM(simpleRayGen)()
 {
@@ -44,9 +45,48 @@ OPTIX_RAYGEN_PROGRAM(simpleRayGen)()
 OPTIX_CLOSEST_HIT_PROGRAM(TriangleMesh)()
 {
   vec3f &prd = owl::getPRD<vec3f>();
-  const vec2f uv     = optixGetTriangleBarycentrics();
-  vec4f texColor(uv.x,uv.y, 0, 0);
-  prd = vec3f(texColor);
+
+  const TrianglesGeomData& self = owl::getProgramData<TrianglesGeomData>();
+
+  float3 vertices[3];
+  vec3f hitP;
+  vec3f Ng;
+
+  if (optixIsTriangleHit())
+  {
+      optixGetTriangleVertexData(optixGetGASTraversableHandle(), optixGetPrimitiveIndex(), optixGetSbtGASIndex(),
+          optixGetRayTime(), vertices);
+
+      float2 barycentrics = optixGetTriangleBarycentrics();
+
+      vec3f vertex0 = vertices[0];
+      vec3f vertex1 = vertices[1];
+      vec3f vertex2 = vertices[2];
+
+      Ng = normalize(cross(vertex1 - vertex0, vertex2 - vertex0));
+      hitP = (1.0f - barycentrics.x - barycentrics.y) * vertex0 + barycentrics.x * vertex1 + barycentrics.y * vertex2;
+  }
+  else if (optixIsDisplacedMicromeshTriangleHit())
+  {
+      // returns the vertices of the current DMM micro triangle hit
+      optixGetMicroTriangleVertexData(vertices);
+
+      float2 hitBaseBarycentrics = optixGetTriangleBarycentrics();
+
+      float2 microVertexBaseBarycentrics[3];
+      optixGetMicroTriangleBarycentricsData(microVertexBaseBarycentrics);
+
+      float2 microBarycentrics = optixBaseBarycentricsToMicroBarycentrics(hitBaseBarycentrics, microVertexBaseBarycentrics);
+
+      vec3f vertex0 = vertices[0];
+      vec3f vertex1 = vertices[1];
+      vec3f vertex2 = vertices[2];
+
+      Ng = normalize(cross(vertex1 - vertex0, vertex2 - vertex0));
+      hitP = (1.0f - microBarycentrics.x - microBarycentrics.y) * vertex0 + microBarycentrics.x * vertex1 + microBarycentrics.y * vertex2;
+  }
+
+  prd = normalize(hitP);
 }
 
 OPTIX_MISS_PROGRAM(miss)()

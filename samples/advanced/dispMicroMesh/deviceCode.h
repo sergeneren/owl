@@ -31,6 +31,8 @@ struct TrianglesGeomData
   vec3f *vertex;
   /*! texture coordinates */
   vec2f *texCoord;
+  /*! array/buffer of vertex positions */
+  vec3f* normal;
   /* texture object */
   cudaTextureObject_t texture;
 };

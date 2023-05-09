@@ -23,12 +23,12 @@
 
 namespace owl {
 
-#ifdef OWL_CAN_DO_OMM
 	__device__ __inline__ vec2f computeUV(float2 bary, vec2f uv0, vec2f uv1, vec2f uv2)
 	{
 		return __saturatef(1.0f - bary.x - bary.y) * uv0 + bary.x * uv1 + bary.y * uv2;
 	}
 
+#ifdef OWL_CAN_DO_OMM
 	// From https://forums.developer.nvidia.com/t/how-to-use-atomiccas-to-implement-atomicadd-short-trouble-adapting-programming-guide-example/22712
 	__device__ short atomicOrShort(unsigned short* address, unsigned short val)
 	{
@@ -57,6 +57,7 @@ namespace owl {
 	__global__ void computeOMMArray(
 		unsigned short* d_ommIndices,
 		vec2f* texCoords,
+		vec3i* indexCoords,
 		cudaTextureObject_t texturePtr,
 		size_t numSubTriangles,
 		unsigned int subdivisionLevel)
@@ -75,13 +76,15 @@ namespace owl {
 		float2 bary0, bary1, bary2;
 		optixMicromapIndexToBaseBarycentrics(uTriI, subdivisionLevel, bary0, bary1, bary2);
 
-		size_t vtx_idx0 = triIdx * 3 + 0;
-		size_t vtx_idx1 = triIdx * 3 + 1;
-		size_t vtx_idx2 = triIdx * 3 + 2;
+		vec3i vtxIndices;
+		if (indexCoords)
+			vtxIndices = indexCoords[triIdx];
+		else
+			vtxIndices = vec3i(triIdx * 3 + 0, triIdx * 3 + 1, triIdx * 3 + 2);
 
-		const vec2f subTriUV0 = computeUV(bary0, texCoords[vtx_idx0], texCoords[vtx_idx1], texCoords[vtx_idx2]);
-		const vec2f subTriUV1 = computeUV(bary1, texCoords[vtx_idx0], texCoords[vtx_idx1], texCoords[vtx_idx2]);
-		const vec2f subTriUV2 = computeUV(bary2, texCoords[vtx_idx0], texCoords[vtx_idx1], texCoords[vtx_idx2]);
+		const vec2f subTriUV0 = computeUV(bary0, texCoords[vtxIndices.x], texCoords[vtxIndices.y], texCoords[vtxIndices.z]);
+		const vec2f subTriUV1 = computeUV(bary1, texCoords[vtxIndices.x], texCoords[vtxIndices.y], texCoords[vtxIndices.z]);
+		const vec2f subTriUV2 = computeUV(bary2, texCoords[vtxIndices.x], texCoords[vtxIndices.y], texCoords[vtxIndices.z]);
 
 		float4 textureVal0 = tex2D<float4>(texturePtr, subTriUV0.x, subTriUV0.y);
 		float4 textureVal1 = tex2D<float4>(texturePtr, subTriUV1.x, subTriUV1.y);
@@ -146,6 +149,7 @@ namespace owl {
 		DisplacementBlock64MicroTris64B* d_displacementBlocks,
 		vec3f* d_displacementDirections,
 		vec2f* texCoords,
+		vec3i* indexCoords,
 		vec3f* normals,
 		cudaTextureObject_t texturePtr,
 		size_t numSubTriangles,
@@ -176,32 +180,34 @@ namespace owl {
 
 		unsigned int triIdx = tid / numSubTrianglesPerBaseTriangle;
 
-		unsigned int vtxIdx0 = triIdx * 3 + 0;
-		unsigned int vtxIdx1 = triIdx * 3 + 1;
-		unsigned int vtxIdx2 = triIdx * 3 + 2;
+		vec3i vtxIndices;
+		if (indexCoords)
+			vtxIndices = indexCoords[triIdx];
+		else
+			vtxIndices = vec3i(triIdx * 3 + 0, triIdx * 3 + 1, triIdx * 3 + 2);
 
-		vec2f baseUV0 = texCoords[vtxIdx0];
-		vec2f baseUV1 = texCoords[vtxIdx1];
-		vec2f baseUV2 = texCoords[vtxIdx2];
+		vec2f baseUV0 = texCoords[vtxIndices.x];
+		vec2f baseUV1 = texCoords[vtxIndices.y];
+		vec2f baseUV2 = texCoords[vtxIndices.z];
 
 		// Set displacement directions per index
 		{
 			if (normals)
 			{
-				vec3f normal = normals[vtxIdx0];
-				d_displacementDirections[vtxIdx0] = normal * displacementScale;
+				vec3f normal = normals[vtxIndices.x];
+				d_displacementDirections[vtxIndices.x] = normal * displacementScale;
 
-				normal = normals[vtxIdx1];
-				d_displacementDirections[vtxIdx1] = normal * displacementScale;
+				normal = normals[vtxIndices.y];
+				d_displacementDirections[vtxIndices.y] = normal * displacementScale;
 
-				normal = normals[vtxIdx2];
-				d_displacementDirections[vtxIdx2] = normal * displacementScale;
+				normal = normals[vtxIndices.z];
+				d_displacementDirections[vtxIndices.z] = normal * displacementScale;
 			}
 			else {
 				vec3f direction(0.0f, displacementScale, 0.0f);
-				d_displacementDirections[vtxIdx0] = direction;
-				d_displacementDirections[vtxIdx1] = direction;
-				d_displacementDirections[vtxIdx2] = direction;
+				d_displacementDirections[vtxIndices.x] = direction;
+				d_displacementDirections[vtxIndices.y] = direction;
+				d_displacementDirections[vtxIndices.z] = direction;
 			}
 		}
 
@@ -415,10 +421,12 @@ namespace owl {
 				d_ommmIndices.upload(omm_indices);
 
 				auto texCoordsDD = texCoord.buffer->getDD(device);
+				auto indexCoordsDD = index.buffer->getDD(device);
 				
 				computeOMMArray << <numBlocks, numThreads >> > (
 					(unsigned short*)d_ommmIndices.d_pointer
 					, (vec2f*)texCoordsDD.d_pointer
+					, (vec3i*)indexCoordsDD.d_pointer
 					, texDD
 					, numSubTriangles
 					, subdivisionLevel
@@ -472,14 +480,19 @@ namespace owl {
 				d_displacementValues.alloc(numSubTriangles * sizeof(DisplacementBlock64MicroTris64B));
 				d_displacementDirections.alloc(vertex.count * sizeof(vec3f));
 
+				void* indexCoordsPtr = nullptr;
+				void* normalsPtr = nullptr;
+
 				auto texCoordsDD = texCoord.buffer->getDD(device);
-				auto normalsDD = normal.buffer->getDD(device);
+				normalsPtr = normal.buffer ? normal.buffer->getDD(device).d_pointer : nullptr;
+				indexCoordsPtr = index.buffer ? index.buffer->getDD(device).d_pointer : nullptr;
 
 				computeDMMArray << <numBlocks, numThreads >> > (
 					(DisplacementBlock64MicroTris64B*)d_displacementValues.get()
 					, (vec3f*)d_displacementDirections.get()
 					, (vec2f*)texCoordsDD.d_pointer
-					, (vec3f*)normalsDD.d_pointer
+					, (vec3i*)indexCoordsPtr
+					, (vec3f*)normalsPtr
 					, texDD
 					, numSubTriangles
 					, numTriangles

@@ -109,7 +109,7 @@ Viewer::Viewer()
   // Load model
     std::string modelName(MODEL_DIR);
     modelName += "/grid.obj";
-    auto isoSphereModel = loadOBJ(modelName);
+    auto model = loadOBJ(modelName);
 
   // create a context on the first device:
   context = owlContextCreate(nullptr,1);
@@ -126,6 +126,7 @@ Viewer::Viewer()
     { "index",  OWL_BUFPTR, OWL_OFFSETOF(TrianglesGeomData,index)},
     { "vertex", OWL_BUFPTR, OWL_OFFSETOF(TrianglesGeomData,vertex)},
     { "texCoord", OWL_BUFPTR, OWL_OFFSETOF(TrianglesGeomData,texCoord)},
+    { "normal", OWL_BUFPTR, OWL_OFFSETOF(TrianglesGeomData,normal)},
     { "texture",  OWL_TEXTURE, OWL_OFFSETOF(TrianglesGeomData,texture)},
     { nullptr }
   };
@@ -144,7 +145,7 @@ Viewer::Viewer()
   LOG("building geometries ...");
   
   // upload the model to the device: the builder
-  TriangleMesh& mesh = *isoSphereModel->meshes[0];
+  TriangleMesh& mesh = *model->meshes[0];
   
   OWLBuffer vertexBuffer = owlDeviceBufferCreate(context, OWL_FLOAT3, mesh.vertex.size(), mesh.vertex.data());
   OWLBuffer indexBuffer = owlDeviceBufferCreate(context, OWL_INT3, mesh.index.size(), mesh.index.data());
@@ -170,14 +171,15 @@ Viewer::Viewer()
   owlGeomSetBuffer(trianglesGeom, "index", indexBuffer);
   owlGeomSetBuffer(trianglesGeom, "vertex", vertexBuffer);
   owlGeomSetBuffer(trianglesGeom, "texCoord", texcoordBuffer);
+  owlGeomSetBuffer(trianglesGeom, "normal", normalBuffer);
 
-  owlTrianglesSetSubdivisionLevel(trianglesGeom,5);
-  owlTrianglesSetDisplacementScale(trianglesGeom, 1.0f);
+  owlTrianglesSetSubdivisionLevel(trianglesGeom,4);
+  owlTrianglesSetDisplacementScale(trianglesGeom, 1.f);
 
   // ------------------------------------------------------------------
-  // create a 4x4 checkerboard texture
+  // create a 16x16 checkerboard texture
   // ------------------------------------------------------------------
-  vec2i texSize = 4;
+  vec2i texSize = 16;
   std::vector<vec4uc> texels;
   for (int iy=0;iy<texSize.y;iy++)
     for (int ix=0;ix<texSize.x;ix++) {
@@ -192,19 +194,8 @@ Viewer::Viewer()
                          texels.data(),
                          OWL_TEXTURE_NEAREST,
                          OWL_TEXTURE_CLAMP);
-  owlGeomSetTexture(trianglesGeom,"texture",cbTexture);
-
-  auto texture = isoSphereModel->textures[0];
-  int32_t width = texture->resolution.x;
-  int32_t height = texture->resolution.y;
-  OWLTexture dispTex = owlTexture2DCreate(context,
-	  OWL_TEXEL_FORMAT_RGBA8,
-	  width,
-	  height,
-	  texture->pixel,
-	  OWL_TEXTURE_LINEAR,
-	  OWL_TEXTURE_CLAMP);
-  owlTrianglesSetDMM(trianglesGeom, dispTex);
+  //owlGeomSetTexture(trianglesGeom,"texture",cbTexture);
+  owlTrianglesSetDMM(trianglesGeom, cbTexture);
 
   // ------------------------------------------------------------------
   // the group/accel for that mesh
