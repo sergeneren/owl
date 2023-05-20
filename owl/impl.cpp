@@ -1188,6 +1188,29 @@ owlTrianglesSetNormals(OWLGeom   _triangles,
 }
 
 OWL_API void
+owlTrianglesSetOMMIndices(OWLGeom   _triangles,
+                       OWLBuffer _buffer,
+                       size_t count,
+                       size_t stride,
+                       size_t offset)
+{
+  LOG_API_CALL();
+    
+  assert(_triangles);
+  assert(_buffer);
+
+  TrianglesGeom::SP triangles
+    = ((APIHandle *)_triangles)->get<TrianglesGeom>();
+  assert(triangles);
+
+  Buffer::SP buffer
+    = ((APIHandle *)_buffer)->get<Buffer>();
+  assert(buffer);
+
+  triangles->setOMMIndices(buffer,count,stride,offset);
+}
+
+OWL_API void
 owlTrianglesSetDMM(OWLGeom   _triangles,
                    OWLTexture _dispTex)
 {
@@ -1209,19 +1232,19 @@ owlTrianglesSetDMM(OWLGeom   _triangles,
 
 OWL_API void
 owlTrianglesSetOMM(OWLGeom   _triangles,
-	OWLTexture _dispTex)
+	OWLTexture _opacityTex)
 {
 	LOG_API_CALL();
 
 	assert(_triangles);
-	assert(_dispTex);
+	assert(_opacityTex);
 
 	TrianglesGeom::SP triangles
 		= ((APIHandle*)_triangles)->get<TrianglesGeom>();
 	assert(triangles);
 
 	Texture::SP dispTex
-		= ((APIHandle*)_dispTex)->get<Texture>();
+		= ((APIHandle*)_opacityTex)->get<Texture>();
 	assert(dispTex);
 
 	triangles->computeOMM(dispTex);

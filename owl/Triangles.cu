@@ -575,6 +575,20 @@ namespace owl {
 			dd.normalPointer = (CUdeviceptr)normals->getPointer(device) + offset;
 		}
 	}
+	
+	void TrianglesGeom::setOMMIndices(Buffer::SP indices,
+		size_t count,
+		size_t stride,
+		size_t offset)
+	{
+#ifdef OWL_CAN_DO_OMM
+		for (auto device : context->getDevices()) {
+			DeviceData& dd = getDD(device);
+			dd.ommIndexPointer.d_pointer = (CUdeviceptr)indices->getPointer(device) + offset;
+			dd.ommIndexPointer.sizeInBytes = sizeof(unsigned short) * count;
+		}
+#endif // OWL_CAN_DO_OMM
+	}
 
 	void TrianglesGeom::setTexCoord(Buffer::SP texCoords,
 		size_t count,

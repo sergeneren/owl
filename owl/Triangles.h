@@ -112,7 +112,13 @@ namespace owl {
                     size_t offset);
     
     /*! set the normals buffer; this remains one buffer even if motion blur is enabled. */
-    void setNormals(Buffer::SP texCoords,
+    void setNormals(Buffer::SP normals,
+                    size_t count,
+                    size_t stride,
+                    size_t offset);
+    
+    /*! set the omm indices buffer; this remains one buffer even if motion blur is enabled. */
+    void setOMMIndices(Buffer::SP indices,
                     size_t count,
                     size_t stride,
                     size_t offset);
