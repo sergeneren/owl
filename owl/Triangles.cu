@@ -395,9 +395,9 @@ namespace owl {
 	{
 #ifdef OWL_CAN_DO_OMM
 		assert(texCoord.buffer);
-		if (subdivisionLevel > 0)
+		if (ommSubdivisionLevel > 0)
 		{
-			const unsigned int numSubTrianglesPerBaseTriangle = 1 << (2 * subdivisionLevel);
+			const unsigned int numSubTrianglesPerBaseTriangle = 1 << (2 * ommSubdivisionLevel);
 			unsigned int bitsPerState = 2;
 
 			size_t numTriangles = index.count;
@@ -429,7 +429,7 @@ namespace owl {
 					, (vec3i*)indexCoordsDD.d_pointer
 					, texDD
 					, numSubTriangles
-					, subdivisionLevel
+					, ommSubdivisionLevel
 					);
 				OWL_CUDA_SYNC_CHECK();
 				
@@ -452,12 +452,12 @@ namespace owl {
 #ifdef OWL_CAN_DO_DMM
 		assert(texCoord.buffer);
 
-		if (displacementScale != 0.0f && subdivisionLevel > 0)
+		if (displacementScale != 0.0f && dmmSubdivisionLevel > 0)
 		{
 			// Based on the subdivision level [0,5], we compute the number of sub triangles.
 			// In this sample, we fix the format to OPTIX_DISPLACEMENT_MICROMAP_FORMAT_64_MICRO_TRIS_64_BYTES, which corresponds to 1 sub triangle at subdivision levels 0-3.
 			// Level 4 requires 4 sub triangles, level 5 requires 16 sub triangles.
-			const unsigned int dmmSubdivisionLevelSubTriangles = std::max(0, (int)subdivisionLevel - 3);
+			const unsigned int dmmSubdivisionLevelSubTriangles = std::max(0, (int)dmmSubdivisionLevel - 3);
 			const unsigned int numSubTrianglesPerBaseTriangle = 1 << (2 * dmmSubdivisionLevelSubTriangles);
 
 			size_t numTriangles = index.count;
@@ -496,7 +496,7 @@ namespace owl {
 					, texDD
 					, numSubTriangles
 					, numTriangles
-					, subdivisionLevel
+					, dmmSubdivisionLevel
 					, displacementScale
 					);
 				OWL_CUDA_SYNC_CHECK();

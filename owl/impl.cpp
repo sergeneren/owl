@@ -1251,7 +1251,7 @@ owlTrianglesSetOMM(OWLGeom   _triangles,
 }
 
 OWL_API void 
-owlTrianglesSetSubdivisionLevel(OWLGeom _triangles,
+owlTrianglesSetOMMSubdivisionLevel(OWLGeom _triangles,
 	unsigned int level)
 {
 	LOG_API_CALL();
@@ -1262,7 +1262,22 @@ owlTrianglesSetSubdivisionLevel(OWLGeom _triangles,
 		= ((APIHandle*)_triangles)->get<TrianglesGeom>();
 	assert(triangles);
 
-	triangles->setSubdivisionLevel(level);
+	triangles->setOMMSubdivisionLevel(level);
+}
+
+OWL_API void 
+owlTrianglesSetDMMSubdivisionLevel(OWLGeom _triangles,
+	unsigned int level)
+{
+	LOG_API_CALL();
+
+	assert(_triangles);
+
+	TrianglesGeom::SP triangles
+		= ((APIHandle*)_triangles)->get<TrianglesGeom>();
+	assert(triangles);
+
+	triangles->setDMMSubdivisionLevel(level);
 }
 
 OWL_API void owlTrianglesSetDisplacementScale(OWLGeom _triangles,

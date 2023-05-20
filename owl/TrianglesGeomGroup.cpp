@@ -151,9 +151,9 @@ namespace owl {
       ta.vertexBuffers       = d_vertices;
 
 #ifdef OWL_CAN_DO_OMM
-      if(!trisDD.ommIndexPointer.empty() && tris->subdivisionLevel > 0)
+      if(!trisDD.ommIndexPointer.empty() && tris->ommSubdivisionLevel > 0)
       {
-		  unsigned int numSubTrianglesPerBaseTriangle = 1 << (2 * tris->subdivisionLevel);
+		  unsigned int numSubTrianglesPerBaseTriangle = 1 << (2 * tris->ommSubdivisionLevel);
           unsigned int bitsPerState = 2;
 
 		  size_t numTriangles = tris->index.count;
@@ -162,7 +162,7 @@ namespace owl {
           OptixOpacityMicromapHistogramEntry histogram{};
 		  histogram.count = numTriangles;
 		  histogram.format = OPTIX_OPACITY_MICROMAP_FORMAT_4_STATE;
-		  histogram.subdivisionLevel = tris->subdivisionLevel;
+		  histogram.subdivisionLevel = tris->ommSubdivisionLevel;
 
           OptixOpacityMicromapArrayBuildInput build_input = {};
 		  build_input.flags = OPTIX_OPACITY_MICROMAP_FLAG_NONE;
@@ -181,7 +181,7 @@ namespace owl {
               OptixOpacityMicromapDesc desc =
               {
                   triIdx * (numSubTrianglesPerBaseTriangle / 16 * bitsPerState) * sizeof(unsigned short),
-                  (unsigned short)tris->subdivisionLevel,
+                  (unsigned short)tris->ommSubdivisionLevel,
                   OPTIX_OPACITY_MICROMAP_FORMAT_4_STATE
               };
               omm_descs.push_back(desc);
@@ -212,7 +212,7 @@ namespace owl {
           OptixOpacityMicromapUsageCount usage_count = {};
 		  usage_count.count = numTriangles;
 		  usage_count.format = OPTIX_OPACITY_MICROMAP_FORMAT_4_STATE;
-		  usage_count.subdivisionLevel = tris->subdivisionLevel;
+		  usage_count.subdivisionLevel = tris->ommSubdivisionLevel;
 
           std::vector<unsigned short> omm_indices(numTriangles);
           for (unsigned int i = 0; i < numTriangles; i++)
@@ -234,9 +234,9 @@ namespace owl {
       
 #ifdef OWL_CAN_DO_DMM
       auto &dmm  = trisDD.dmmArray;
-      if(tris->subdivisionLevel>0 && tris->displacementScale!=0.0f && !dmm.d_displacementValues.empty())
+      if(tris->dmmSubdivisionLevel>0 && tris->displacementScale!=0.0f && !dmm.d_displacementValues.empty())
       {
-		  unsigned int dmmSubdivisionLevelSubTriangles = std::max(0, (int)tris->subdivisionLevel - 3);
+		  unsigned int dmmSubdivisionLevelSubTriangles = std::max(0, (int)tris->dmmSubdivisionLevel - 3);
 		  unsigned int numSubTrianglesPerBaseTriangle = 1 << (2 * dmmSubdivisionLevelSubTriangles);
 		  constexpr int      subTriSizeByteSize = 64;  // 64B for format OPTIX_DISPLACEMENT_MICROMAP_FORMAT_64_MICRO_TRIS_64_BYTES
 
@@ -259,7 +259,7 @@ namespace owl {
 
 		  histogram.count = (unsigned int)numTriangles;
 		  histogram.format = OPTIX_DISPLACEMENT_MICROMAP_FORMAT_64_MICRO_TRIS_64_BYTES;
-		  histogram.subdivisionLevel = tris->subdivisionLevel;
+		  histogram.subdivisionLevel = tris->dmmSubdivisionLevel;
 		  
           bi.numDisplacementMicromapHistogramEntries = 1;
 		  bi.displacementMicromapHistogramEntries = &histogram;
@@ -274,7 +274,7 @@ namespace owl {
 			  OptixDisplacementMicromapDesc& desc = descriptors[i];
 			  desc.byteOffset = i * subTriSizeByteSize * numSubTrianglesPerBaseTriangle;
 			  desc.format = OPTIX_DISPLACEMENT_MICROMAP_FORMAT_64_MICRO_TRIS_64_BYTES;
-			  desc.subdivisionLevel = tris->subdivisionLevel;
+			  desc.subdivisionLevel = tris->dmmSubdivisionLevel;
 		  }
 
 		  DeviceMemory d_descriptors;

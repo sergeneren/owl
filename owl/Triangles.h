@@ -135,7 +135,8 @@ namespace owl {
     /*! pretty-print */
     std::string toString() const override;
 
-    void setSubdivisionLevel(unsigned int level) { subdivisionLevel = level; }
+    void setDMMSubdivisionLevel(unsigned int level) { dmmSubdivisionLevel = level; }
+    void setOMMSubdivisionLevel(unsigned int level) { ommSubdivisionLevel = level; }
     void setDisplacementScale(float scale) { displacementScale = scale; }
 
     struct {
@@ -163,7 +164,8 @@ namespace owl {
       std::vector<Buffer::SP> buffers;
     } vertex;
 
-    unsigned int subdivisionLevel = 0;
+    unsigned int dmmSubdivisionLevel = 0;
+    unsigned int ommSubdivisionLevel = 0;
     float displacementScale = 1.0f;
   };
 

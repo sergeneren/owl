@@ -173,7 +173,7 @@ Viewer::Viewer()
   owlGeomSetBuffer(trianglesGeom, "texCoord", texcoordBuffer);
   owlGeomSetBuffer(trianglesGeom, "normal", normalBuffer);
 
-  owlTrianglesSetSubdivisionLevel(trianglesGeom,4);
+  owlTrianglesSetDMMSubdivisionLevel(trianglesGeom,4);
   owlTrianglesSetDisplacementScale(trianglesGeom, 1.f);
 
   // ------------------------------------------------------------------

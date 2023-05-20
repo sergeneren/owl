@@ -917,7 +917,10 @@ OWL_API void owlTrianglesSetDMM(OWLGeom triangles,
 OWL_API void owlTrianglesSetOMM(OWLGeom triangles,
                                 OWLTexture opacitytTexture);
 
-OWL_API void owlTrianglesSetSubdivisionLevel(OWLGeom triangles,
+OWL_API void owlTrianglesSetOMMSubdivisionLevel(OWLGeom triangles,
+                                unsigned int level);
+
+OWL_API void owlTrianglesSetDMMSubdivisionLevel(OWLGeom triangles,
                                 unsigned int level);
 
 OWL_API void owlTrianglesSetDisplacementScale(OWLGeom triangles,
