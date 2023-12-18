@@ -53,8 +53,10 @@ namespace owl {
   
   void CurvesGeomGroup::updateMotionBounds()
   {
-    // only need this for older version of optix that wouldn't even support curves
-    OWL_NOTIMPLEMENTED;
+#if OPTIX_VERSION < 70200
+	  // only need this for older version of optix that wouldn't even support spheres
+	  OWL_NOTIMPLEMENTED;
+#endif
   }
   
   void CurvesGeomGroup::buildAccel()
