@@ -88,7 +88,7 @@ namespace owl {
                                /*! the number of vertices in each time step */
                                size_t count)
   {
-    assert(count > 1);
+    assert(count > 0);
     assert(vertices.size() > 0);
     assert(radii.size() == vertices.size());
     
