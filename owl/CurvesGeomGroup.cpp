@@ -59,7 +59,7 @@ namespace owl {
 #endif
   }
   
-  void CurvesGeomGroup::buildAccel()
+  void CurvesGeomGroup::buildAccel(LaunchParams::SP launchParams)
   {
     for (auto device : context->getDevices()) 
       buildAccelOn<true>(device);
@@ -68,7 +68,7 @@ namespace owl {
       updateMotionBounds();
   }
   
-  void CurvesGeomGroup::refitAccel()
+  void CurvesGeomGroup::refitAccel(LaunchParams::SP launchParams)
   {
     for (auto device : context->getDevices()) 
       buildAccelOn<false>(device);
