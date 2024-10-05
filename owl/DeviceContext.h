@@ -53,6 +53,10 @@ namespace owl {
     size_t missProgRecordSize  = 0;
     size_t missProgRecordCount = 0;
     DeviceMemory missProgRecordsBuffer;
+
+    size_t callableProgRecordSize = 0;
+    size_t callableProgRecordCount = 0;
+    DeviceMemory callableProgRecordsBuffer;
     
     DeviceMemory launchParamsBuffer;
   };
@@ -91,11 +95,13 @@ namespace owl {
     void buildMissPrograms();
     void buildRayGenPrograms();
     void buildHitGroupPrograms();
+    void buildCallablePrograms();
 
     void destroyPrograms();
     void destroyMissPrograms();
     void destroyRayGenPrograms();
     void destroyHitGroupPrograms();
+    void destroyCallablePrograms();
 
     void destroyPipeline();
     void buildPipeline();

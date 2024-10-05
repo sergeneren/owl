@@ -185,7 +185,17 @@ namespace owl {
       = (uint32_t)device->sbt.missProgRecordSize;
     sbt.missRecordCount
       = (uint32_t)device->sbt.missProgRecordCount;
-    
+
+    // -------------------------------------------------------
+    // set miss progs part of SBT 
+    // -------------------------------------------------------
+    sbt.callablesRecordBase
+      = (CUdeviceptr)device->sbt.callableProgRecordsBuffer.get();
+    sbt.callablesRecordStrideInBytes
+      = (uint32_t)device->sbt.callableProgRecordSize;
+    sbt.callablesRecordCount
+      = (uint32_t)device->sbt.callableProgRecordCount;
+
     // -------------------------------------------------------
     // set hit groups part of SBT 
     // -------------------------------------------------------

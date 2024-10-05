@@ -59,8 +59,8 @@ namespace owl {
 
     for (const char *s = orignalPtxCode; *s; ) {
       std::string line = getNextLine(s);
-      if (line.find(" _optix_") != line.npos ||
-          line.find(",_optix_") != line.npos
+	  if (line.find(" _optix_") != line.npos ||
+		  line.find(",_optix_") != line.npos
           )
         fixed << "//dropped: " << line;
       else
@@ -151,44 +151,48 @@ namespace owl {
 #endif
       assert(module != nullptr);
 
-      // ------------------------------------------------------------------
-      // Now, build separate cuda-only module that does not contain
-      // any optix-internal symbols. Note this does not actually
-      // *remove* any potentially existing anyhit/closesthit/etc.
-      // programs in this module - it just removed all optix-related
-      // calls from this module, but leaves the remaining (now
-      // dysfunctional) anyhit/closesthit/etc. programs still in that
-      // PTX code. It would obviously be cleaner to completely
-      // remove those programs, but that would require significantly
-      // more advanced parsing of the PTX string, so right now we'll
-      // just leave them in (and as it's in a module that never gets
-      // used by optix, this should actually be OK).
-      // ------------------------------------------------------------------
-      LOG("generating second, 'non-optix' version of that module, too");
-      CUresult rc = (CUresult)0;
-      const std::string fixedPtxCode
-        = killAllInternalOptixSymbolsFromPtxString(parent->ptxCode.c_str());
-      strcpy(log,"(no log yet)");
-      CUjit_option options[] = {
-                                CU_JIT_TARGET_FROM_CUCONTEXT,
-                                CU_JIT_ERROR_LOG_BUFFER,
-                                CU_JIT_ERROR_LOG_BUFFER_SIZE_BYTES,
-      };
-      void *optionValues[] = {
-                              (void*)0,
-                              (void*)log,
-                              (void*)sizeof(log)
-      };
+      if (parent->useCompute)
+      {
+          // ------------------------------------------------------------------
+          // Now, build separate cuda-only module that does not contain
+          // any optix-internal symbols. Note this does not actually
+          // *remove* any potentially existing anyhit/closesthit/etc.
+          // programs in this module - it just removed all optix-related
+          // calls from this module, but leaves the remaining (now
+          // dysfunctional) anyhit/closesthit/etc. programs still in that
+          // PTX code. It would obviously be cleaner to completely
+          // remove those programs, but that would require significantly
+          // more advanced parsing of the PTX string, so right now we'll
+          // just leave them in (and as it's in a module that never gets
+          // used by optix, this should actually be OK).
+          // ------------------------------------------------------------------
+          LOG("generating second, 'non-optix' version of that module, too");
+          CUresult rc = (CUresult)0;
+          const std::string fixedPtxCode
+            = killAllInternalOptixSymbolsFromPtxString(parent->ptxCode.c_str());
+          strcpy(log,"(no log yet)");
+          CUjit_option options[] = {
+                                    CU_JIT_TARGET_FROM_CUCONTEXT,
+                                    CU_JIT_ERROR_LOG_BUFFER,
+                                    CU_JIT_ERROR_LOG_BUFFER_SIZE_BYTES,
+          };
+          void *optionValues[] = {
+                                  (void*)0,
+                                  (void*)log,
+                                  (void*)sizeof(log)
+          };
       
-      rc = cuModuleLoadDataEx(&computeModule, (void *)fixedPtxCode.c_str(),
-                              3, options, optionValues);
-      if (rc != CUDA_SUCCESS) {
-        const char *errName = 0;
-        cuGetErrorName(rc,&errName);
-        OWL_RAISE("unknown CUDA error when building module "
-                  "for bounds program kernel "
-                  + std::string(errName) + " log: " + std::string(log));
+          rc = cuModuleLoadDataEx(&computeModule, (void *)fixedPtxCode.c_str(),
+                                  3, options, optionValues);
+          if (rc != CUDA_SUCCESS) {
+            const char *errName = 0;
+            cuGetErrorName(rc,&errName);
+            OWL_RAISE("unknown CUDA error when building module "
+                      "for bounds program kernel "
+                      + std::string(errName) + " log: " + std::string(log));
+          }
       }
+
       LOG_OK("created module #" << parent->ID << " (both optix and cuda)");
     }
   }

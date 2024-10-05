@@ -78,6 +78,9 @@ namespace owl {
 
     /*! a flag tracking if we're using OptiX IR or PTX. For now, assuming PTX as default. */
     bool useIR = false;
+    
+    /*! a flag tracking if we're using OptiX IR or PTX. For now, assuming PTX as default. */
+    bool useCompute = false;
 
     /*! the precompiled PTX code supplied by the user */
     const std::string ptxCode;

@@ -24,6 +24,7 @@
 #include "RayGen.h"
 #include "LaunchParams.h"
 #include "MissProg.h"
+#include "CallableProg.h"
 
 namespace owl {
 
@@ -67,6 +68,8 @@ namespace owl {
     void buildRayGenRecordsOn(const DeviceContext::SP &device);
     /*! part of the SBT creation - builds the miss group array */
     void buildMissProgRecordsOn(const DeviceContext::SP &device);
+    /*! part of the SBT creation - builds the callable group array */
+    void buildCallableProgRecordsOn(const DeviceContext::SP &device);
 
     /*! sets number of ray types to be used - should be done right
       after context creation, and before SBT and pipeline get
@@ -258,7 +261,22 @@ namespace owl {
 
     /*! sets miss prog to use for a given ray type */
     void setMissProg(int rayTypeToSet, MissProg::SP missProgToUse);
-    
+  
+    /*! creates new callable program *type* with given program name (in
+    given module), and the given variable declarations that
+    describe this type's variables */
+    CallableProgType::SP
+    createCallableProgType(Module::SP module,
+            const std::string& dcName,
+            const std::string& ccName,
+            size_t varStructSize,
+            const std::vector<OWLVarDecl>& varDecls);
+
+    /*! create new instance of a callable program of given type */
+    CallableProg::SP
+        createCallableProg(const std::shared_ptr<CallableProgType>& type);
+
+
     /*! creates new geometry type defitiion with given variable declarations */
     GeomType::SP
     createGeomType(OWLGeomKind kind,
@@ -280,16 +298,18 @@ namespace owl {
     /*! @{ registries for all the different object types within this
       context. allows for keeping track what's alive, and what has
       to be compiled, put into SBTs, etc */
-    ObjectRegistryT<Buffer>       buffers;
-    ObjectRegistryT<Texture>      textures;
-    ObjectRegistryT<Group>        groups;
-    ObjectRegistryT<RayGenType>   rayGenTypes;
-    ObjectRegistryT<RayGen>       rayGens;
-    ObjectRegistryT<MissProgType> missProgTypes;
-    ObjectRegistryT<MissProg>     missProgs;
-    ObjectRegistryT<GeomType>     geomTypes;
-    ObjectRegistryT<Geom>         geoms;
-    ObjectRegistryT<Module>       modules;
+    ObjectRegistryT<Buffer>           buffers;
+    ObjectRegistryT<Texture>          textures;
+    ObjectRegistryT<Group>            groups;
+    ObjectRegistryT<RayGenType>       rayGenTypes;
+    ObjectRegistryT<RayGen>           rayGens;
+    ObjectRegistryT<MissProgType>     missProgTypes;
+    ObjectRegistryT<MissProg>         missProgs;
+    ObjectRegistryT<CallableProgType> callableProgTypes;
+    ObjectRegistryT<CallableProg>     callableProgs;
+    ObjectRegistryT<GeomType>         geomTypes;
+    ObjectRegistryT<Geom>             geoms;
+    ObjectRegistryT<Module>           modules;
     ObjectRegistryT<LaunchParamsType> launchParamTypes;
     ObjectRegistryT<LaunchParams>     launchParams;
     /*! @} */

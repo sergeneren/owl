@@ -19,6 +19,7 @@
 #include "InstanceGroup.h"
 
 #include <optix_function_table_definition.h>
+#include <optix_stack_size.h>
 
 #define LOG(message)                            \
   if (Context::logging())                       \
@@ -275,7 +276,7 @@ namespace owl {
     moduleCompileOptions.optLevel          = OPTIX_COMPILE_OPTIMIZATION_LEVEL_0;
 #if OPTIX_VERSION >= 70400
     // 7.4 no longer has 'lineinfo'
-    moduleCompileOptions.debugLevel        = OPTIX_COMPILE_DEBUG_LEVEL_MINIMAL;
+    moduleCompileOptions.debugLevel        = OPTIX_COMPILE_DEBUG_LEVEL_FULL;
 #else
     moduleCompileOptions.debugLevel        = OPTIX_COMPILE_DEBUG_LEVEL_LINEINFO;
 #endif
@@ -395,16 +396,41 @@ namespace owl {
          "attempting to set max instancing depth to "
          "value that exceeds OptiX's MAX_TRAVERSABLE_GRAPH_DEPTH limit");
     
+	OptixStackSizes stack_sizes = {};
+	for (OptixProgramGroup& program_group : allActivePrograms) 
+    {
+#if (OPTIX_VERSION < 70700)
+        OPTIX_CHECK(optixUtilAccumulateStackSizes(program_group, &stack_sizes));
+#else
+		// OptiX 7.7+ is able to take the whole pipeline into account
+		// when calculating the stack requirements.
+        OPTIX_CHECK(optixUtilAccumulateStackSizes(program_group, &stack_sizes, pipeline));
+#endif
+	}
+
+	uint32_t max_trace_depth = 1;
+	uint32_t max_cc_depth = 1;
+	uint32_t max_dc_depth = 1;
+	uint32_t direct_callable_stack_size_from_traversal;
+	uint32_t direct_callable_stack_size_from_state;
+	uint32_t continuation_stack_size;
+    OPTIX_CHECK(optixUtilComputeStackSizes(
+		&stack_sizes, max_trace_depth, max_cc_depth, max_dc_depth,
+		&direct_callable_stack_size_from_traversal,
+		&direct_callable_stack_size_from_state, &continuation_stack_size));
+
+
+
     OPTIX_CHECK(optixPipelineSetStackSize
                 (pipeline,
                  /* [in] The pipeline to configure the stack size for */
-                 2*1024,
+                 direct_callable_stack_size_from_traversal,
                  /* [in] The direct stack size requirement for
                     direct callables invoked from IS or AH. */
-                 2*1024,
+                 direct_callable_stack_size_from_state,
                  /* [in] The direct stack size requirement for
                     direct callables invoked from RG, MS, or CH.  */
-                 2*1024,
+                 continuation_stack_size,
                  /* [in] The continuation stack requirement. */
                  int(parent->maxInstancingDepth+1)
                  /* [in] The maximum depth of a traversable graph
@@ -419,6 +445,7 @@ namespace owl {
     buildMissPrograms();
     buildRayGenPrograms();
     buildHitGroupPrograms();
+    buildCallablePrograms();
   }
 
   void DeviceContext::buildCurvesModules()
@@ -477,6 +504,7 @@ namespace owl {
     destroyMissPrograms();
     destroyRayGenPrograms();
     destroyHitGroupPrograms();
+    destroyCallablePrograms();
 
     allActivePrograms.clear();
   }
@@ -491,6 +519,7 @@ namespace owl {
       MissProgType *prog = parent->missProgTypes.getPtr(progID);
       if (!prog) continue;
       auto &dd = prog->getDD(shared_from_this());
+      if (!((void*)&dd)) continue;
       assert(dd.pg == 0);
 
       Module::SP module = prog->module;
@@ -523,6 +552,8 @@ namespace owl {
       MissProgType *prog = parent->missProgTypes.getPtr(progID);
       if (!prog) continue;
       auto &dd = prog->getDD(shared_from_this());
+
+      if (!((void*)&dd)) continue;
       if (dd.pg == 0) continue;
 
       OPTIX_CHECK(optixProgramGroupDestroy(dd.pg));
@@ -669,4 +700,56 @@ namespace owl {
     }
   }
   
+  void DeviceContext::buildCallablePrograms()
+  {
+	  for (size_t pgID = 0; pgID < parent->callableProgTypes.size(); pgID++) {
+		  OptixProgramGroupOptions pgOptions = {};
+		  OptixProgramGroupDesc    pgDesc = {};
+
+		  CallableProgType* prog = parent->callableProgTypes.getPtr(pgID);
+		  if (!prog) continue;
+
+		  auto& dd = prog->getDD(shared_from_this());
+		  assert(dd.pg == 0);
+
+		  Module::SP module = prog->module;
+		  assert(module);
+
+		  OptixModule optixModule = module->getDD(shared_from_this()).module;
+		  assert(optixModule);
+
+		  pgDesc.kind = OPTIX_PROGRAM_GROUP_KIND_CALLABLES;
+		  pgDesc.callables.moduleDC = prog->DirectCallableName.empty() ? nullptr : optixModule;
+		  pgDesc.callables.entryFunctionNameDC = prog->DirectCallableName.empty() ? nullptr : prog->DirectCallableName.c_str();
+		  pgDesc.callables.moduleCC = prog->ContinuationCallableName.empty() ? nullptr : optixModule;
+		  pgDesc.callables.entryFunctionNameCC = prog->ContinuationCallableName.empty() ? nullptr : prog->ContinuationCallableName.c_str();
+
+		  char log[2048];
+		  size_t sizeof_log = sizeof(log);
+		  OPTIX_CHECK(optixProgramGroupCreate(optixContext,
+			  &pgDesc,
+			  1,
+			  &pgOptions,
+			  log, &sizeof_log,
+			  &dd.pg
+		  ));
+		  assert(dd.pg);
+		  allActivePrograms.push_back(dd.pg);
+	  }
+  }
+
+  void DeviceContext::destroyCallablePrograms()
+  {
+	  for (size_t pgID = 0; pgID < parent->callableProgTypes.size(); pgID++) {
+		  CallableProgType* prog = parent->callableProgTypes.getPtr(pgID);
+		  if (!prog) continue;
+
+		  auto& dd = prog->getDD(shared_from_this());
+		  if (dd.pg == 0) continue;
+
+		  OPTIX_CHECK(optixProgramGroupDestroy(dd.pg));
+		  dd.pg = 0;
+	  }
+  }
+
 } // ::owl

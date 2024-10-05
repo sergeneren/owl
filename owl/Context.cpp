@@ -53,6 +53,8 @@ namespace owl {
       rayGens(this),
       missProgTypes(this),
       missProgs(this),
+      callableProgTypes(this),
+      callableProgs(this),
       geomTypes(this),
       geoms(this),
       modules(this),
@@ -212,6 +214,14 @@ namespace owl {
     rg->createDeviceData(getDevices());
     return rg;
   }
+  
+  CallableProg::SP
+  Context::createCallableProg(const std::shared_ptr<CallableProgType>& type)
+  {
+      CallableProg::SP rg = std::make_shared<CallableProg>(this, type);
+	  rg->createDeviceData(getDevices());
+	  return rg;
+  }
 
   LaunchParams::SP
   Context::createLaunchParams(const std::shared_ptr<LaunchParamsType> &type)
@@ -261,7 +271,21 @@ namespace owl {
     rgt->createDeviceData(getDevices());
     return rgt;
   }
-  
+
+  CallableProgType::SP
+  Context::createCallableProgType(Module::SP module,
+		  const std::string& dcName,
+		  const std::string& ccName,
+		  size_t varStructSize,
+		  const std::vector<OWLVarDecl>& varDecls)
+  {
+      CallableProgType::SP rgt = std::make_shared<CallableProgType>(this,
+		  module, dcName, ccName,
+		  varStructSize,
+		  varDecls);
+	  rgt->createDeviceData(getDevices());
+	  return rgt;
+  }
   
   LaunchParamsType::SP
   Context::createLaunchParamsType(size_t varStructSize,
@@ -442,7 +466,6 @@ namespace owl {
     LOG_OK("done building (and uploading) SBT hit group records");
   }
   
-  
   void Context::buildMissProgRecordsOn(const DeviceContext::SP &device)
   {
     LOG("building SBT miss group records");
@@ -489,7 +512,6 @@ namespace owl {
     LOG_OK("done building (and uploading) SBT miss group records");
   }
 
-
   void Context::buildRayGenRecordsOn(const DeviceContext::SP &device)
   {
     LOG("building SBT rayGen prog records");
@@ -506,6 +528,53 @@ namespace owl {
     }
   }
   
+  void Context::buildCallableProgRecordsOn(const DeviceContext::SP& device)
+  {
+      if (!callableProgs.size())
+          return;
+
+	  LOG("building SBT callable group records");
+	  SetActiveGPU forLifeTime(device);
+
+	  size_t numCallableProgRecords = numRayTypes;
+
+	  size_t maxCallableProgDataSize = 0;
+	  for (int i = 0; i < (int)callableProgs.size(); i++) {
+		  auto callableProg = callableProgs.getPtr(i);
+		  if (!callableProg) continue;
+		  assert(callableProg->type);
+          maxCallableProgDataSize = std::max(maxCallableProgDataSize, callableProg->type->varStructSize);
+	  }
+
+	  size_t callableProgRecordSize
+		  = OPTIX_SBT_RECORD_HEADER_SIZE
+		  + smallestMultipleOf<OPTIX_SBT_RECORD_ALIGNMENT>(maxCallableProgDataSize);
+
+	  assert((OPTIX_SBT_RECORD_HEADER_SIZE % OPTIX_SBT_RECORD_ALIGNMENT) == 0);
+	  device->sbt.callableProgRecordSize = callableProgRecordSize;
+	  device->sbt.callableProgRecordCount = numCallableProgRecords;
+
+	  size_t totalCallableProgRecordsArraySize
+		  = numCallableProgRecords * callableProgRecordSize;
+	  std::vector<uint8_t> callableProgRecords(totalCallableProgRecordsArraySize);
+
+	  // ------------------------------------------------------------------
+	  // now, write all records (only on the host so far): we need to
+	  // write one record per geometry, per ray type
+	  // ------------------------------------------------------------------
+	  for (size_t recordID = 0; recordID < numCallableProgRecords; recordID++) {
+          auto callable = callableProgs.getPtr(recordID);
+		  if (!callable) continue;
+
+		  uint8_t* const sbtRecord
+			  = callableProgRecords.data() + recordID * callableProgRecordSize;
+		  callable->writeSBTRecord(sbtRecord, device);
+	  }
+	  device->sbt.callableProgRecordsBuffer.alloc(callableProgRecords.size());
+	  device->sbt.callableProgRecordsBuffer.upload(callableProgRecords);
+	  LOG_OK("done building (and uploading) SBT callable group records");
+  }
+
   void Context::buildSBT(OWLBuildSBTFlags flags)
   {
     if (flags & OWL_SBT_HITGROUPS)
@@ -520,7 +589,12 @@ namespace owl {
     // ----------- build raygens -----------
     if (flags & OWL_SBT_RAYGENS)
       for (auto device : getDevices())
-        buildRayGenRecordsOn(device);
+        buildRayGenRecordsOn(device);   
+    
+    // ----------- build callables -----------
+    if (flags & OWL_SBT_CALLABLES)
+      for (auto device : getDevices())
+        buildCallableProgRecordsOn(device);
   }
 
   void Context::buildPipeline()

@@ -384,6 +384,14 @@ owlMissProgGetVariable(OWLMissProg _prog,
 }
 
 OWL_API OWLVariable
+owlCallableProgGetVariable(OWLCallableProg _prog,
+                       const char *varName)
+{
+  LOG_API_CALL();
+  return getVariableHelper<CallableProg>((APIHandle*)_prog,varName);
+}
+
+OWL_API OWLVariable
 owlParamsGetVariable(OWLParams _prog,
                      const char *varName)
 {
@@ -498,6 +506,50 @@ owlMissProgCreate(OWLContext       _context,
   assert(missProg);
 
   return (OWLMissProg)checkGet(_context)->createHandle(missProg);
+}
+
+OWL_API OWLCallableProg
+owlCallableProgCreate(OWLContext       _context,
+	                  OWLModule        _module,
+	                  const char*       dcName,
+	                  const char*       ccName,
+	                  size_t            sizeOfVarStruct,
+	                  const OWLVarDecl* vars,
+	                  int               numVars)
+{
+	LOG_API_CALL();
+
+	assert(_module);
+	Module::SP module
+		= ((APIHandle*)_module)->get<Module>();
+	assert(module);
+
+    std::string dcNameStr;
+    std::string ccNameStr;
+
+    if (dcName) dcNameStr = std::string(dcName);
+    if (ccName) ccNameStr = std::string(ccName);
+
+	CallableProgType::SP  callableProgType
+		= checkGet(_context)->createCallableProgType(module, dcNameStr, ccNameStr,
+			sizeOfVarStruct,
+			checkAndPackVariables(vars, numVars));
+
+	CallableProg::SP  callableProg
+		= checkGet(_context)->createCallableProg(callableProgType);
+	assert(callableProg);
+
+	return (OWLCallableProg)checkGet(_context)->createHandle(callableProg);
+}
+
+OWL_API void OWLCallableProgSetDCName(const char* dcName, OWLCallableProg program)
+{
+
+}
+
+OWL_API void OWLCallableProgSetCCName(const char* ccName, OWLCallableProg program)
+{
+
 }
 
   
@@ -1711,6 +1763,7 @@ OBJECT_SETTERS(RayGen)
 OBJECT_SETTERS(Geom)
 OBJECT_SETTERS(Params)
 OBJECT_SETTERS(MissProg)
+OBJECT_SETTERS(CallableProg)
 
 
 
