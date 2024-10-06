@@ -37,7 +37,6 @@
     if( res != OPTIX_SUCCESS )                                          \
       {                                                                 \
         fprintf( stderr, "Optix call (%s) failed with code %d (line %d)\n", #call, res, __LINE__ ); \
-        exit( 2 );                                                      \
       }                                                                 \
   }
 
@@ -48,7 +47,6 @@
       {                                                                 \
         fprintf( stderr, "Optix call (%s) failed with code %d (line %d)\n", #call, res, __LINE__ ); \
         fprintf( stderr, "Log:\n%s\n", log );                           \
-        exit( 2 );                                                      \
       }                                                                 \
   }
 
