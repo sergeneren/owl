@@ -1114,6 +1114,12 @@ OWL_API void owlGeomRelease(OWLGeom geometry)
   releaseObject<Geom>((APIHandle*)geometry);
 }
 
+OWL_API void owlCallableProgRelease(OWLCallableProg prog)
+{
+  LOG_API_CALL();
+  releaseObject<OWLCallableProg>((APIHandle*)prog);
+}
+
 // ==================================================================
 // "Triangles" functions
 // ==================================================================

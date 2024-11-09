@@ -539,6 +539,9 @@ owlCallableProgCreate(OWLContext        context,
                       const OWLVarDecl* vars,
                       int               numVars);
 
+OWL_API void
+owlCallableProgRelease(OWLCallableProg rayGen);
+
 // ------------------------------------------------------------------
 /*! create a new group (which handles the acceleration strucure) for
   triangle geometries.

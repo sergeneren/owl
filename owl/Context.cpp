@@ -536,7 +536,7 @@ namespace owl {
 	  LOG("building SBT callable group records");
 	  SetActiveGPU forLifeTime(device);
 
-	  size_t numCallableProgRecords = numRayTypes;
+	  size_t numCallableProgRecords = callableProgs.size() * numRayTypes;
 
 	  size_t maxCallableProgDataSize = 0;
 	  for (int i = 0; i < (int)callableProgs.size(); i++) {
