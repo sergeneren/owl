@@ -128,7 +128,7 @@ namespace owl {
 
 		// now go over all geometries to set up the buildinputs
 		for (size_t childID = 0; childID < geometries.size(); childID++) {
-			// the child wer're setting them with (with sanity checks)
+			// the child we're setting them with (with sanity checks)
 			SphereGeom::SP spheres = geometries[childID]->as<SphereGeom>();
 			assert(spheres);
 
@@ -145,40 +145,35 @@ namespace owl {
 
 			OptixBuildInput& buildInput = buildInputs[childID];
 
+			auto spheresGT = spheres->geomType->as<SphereGeomType>();//getTypeDD(device);
+
 			buildInput = {}; // init defaults, whatever they might be
 
 			buildInput.type = OPTIX_BUILD_INPUT_TYPE_SPHERES;
-			auto& sphereArray = buildInput.sphereArray;
-
-			auto spheresGT = spheres->geomType->as<SphereGeomType>();//getTypeDD(device);
-
-			sphereArray.radiusBuffers = d_radius;
-			sphereArray.radiusStrideInBytes = sizeof(float);
-
-			sphereArray.vertexBuffers = d_vertices;//vertexBufferPointers;
-			sphereArray.numVertices = spheres->vertexCount;//static_cast<uint32_t>( vertices.size() );
-			sphereArray.vertexStrideInBytes = sizeof(vec3f);
-			sphereArray.primitiveIndexOffset = 0;
+			buildInput.sphereArray.vertexBuffers = d_vertices;//vertexBufferPointers;
+			buildInput.sphereArray.numVertices = spheres->vertexCount;//static_cast<uint32_t>( vertices.size() );
+			buildInput.sphereArray.radiusBuffers = d_radius;
+			buildInput.sphereArray.singleRadius = false;
 
 			// we always have exactly one SBT entry per shape (i.e., triangle
 			// mesh), and no per-primitive materials:
 			sphereInputFlags[childID] = OPTIX_GEOMETRY_FLAG_NONE;//0;
-			sphereArray.flags = &sphereInputFlags[childID];
+			buildInput.sphereArray.flags = &sphereInputFlags[childID];
 
 			// iw, jan 7, 2020: note this is not the "actual" number of
 			// SBT entires we'll generate when we build the SBT, only the
 			// number of per-ray-type 'groups' of SBT entities (i.e., before
 			// scaling by the SBT_STRIDE that gets passed to
 			// optixTrace. So, for the build input this value remains *1*).
-			sphereArray.numSbtRecords = 1;
-			sphereArray.sbtIndexOffsetBuffer = 0;
-			sphereArray.sbtIndexOffsetSizeInBytes = 0;
-			sphereArray.sbtIndexOffsetStrideInBytes = 0;
+			buildInput.sphereArray.numSbtRecords = 1;
+			buildInput.sphereArray.sbtIndexOffsetBuffer = 0;
+			buildInput.sphereArray.sbtIndexOffsetSizeInBytes = 0;
+			buildInput.sphereArray.sbtIndexOffsetStrideInBytes = 0;
 
 			// -------------------------------------------------------
 			// sanity check that we don't have too many prims
 			// -------------------------------------------------------
-			sumPrims += sphereArray.numVertices;
+			sumPrims++;
 		}
 
 		// -------------------------------------------------------
@@ -203,13 +198,8 @@ namespace owl {
 			accelOptions.motionOptions.timeBegin = 0.f;
 			accelOptions.motionOptions.timeEnd = 1.f;
 		}
-		accelOptions.buildFlags
-			=
-			this->buildFlags
-			// | OPTIX_BUILD_FLAG_ALLOW_COMPACTION
-			// |
-			// OPTIX_BUILD_FLAG_ALLOW_RANDOM_VERTEX_ACCESS
-			;
+		accelOptions.buildFlags = this->buildFlags;// | OPTIX_BUILD_FLAG_ALLOW_COMPACTION | OPTIX_BUILD_FLAG_ALLOW_RANDOM_VERTEX_ACCESS;
+
 		if (FULL_REBUILD)
 			accelOptions.operation = OPTIX_BUILD_OPERATION_BUILD;
 		else
@@ -235,7 +225,7 @@ namespace owl {
 			? blasBufferSizes.tempSizeInBytes
 			: blasBufferSizes.tempUpdateSizeInBytes;
 		LOG("starting to build/refit "
-			<< prettyNumber(buildInputs.size()) << " curve geom groups, "
+			<< prettyNumber(buildInputs.size()) << " sphere geom groups, "
 			<< prettyNumber(blasBufferSizes.outputSizeInBytes) << "B in output and "
 			<< prettyNumber(tempSize) << "B in temp data");
 
