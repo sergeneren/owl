@@ -190,7 +190,15 @@ namespace owl {
     assert(texture);
     return texture;
   }
-    
+
+  Texture::SP
+	  Context::texture2DCreate(unsigned long long texObj)
+  {
+	  Texture::SP texture
+		  = std::make_shared<Texture>(this, texObj);
+	  assert(texture);
+	  return texture;
+  }
 
   Buffer::SP
   Context::graphicsBufferCreate(OWLDataType type,

@@ -748,6 +748,11 @@ owlTexture2DCreate(OWLContext context,
                    uint32_t linePitchInBytes       OWL_IF_CPP(=0)
                    );
                    
+/*! create new texture of given texture object */
+OWL_API OWLTexture
+owlTexture2DCreateFromCudaTexture(OWLContext context,
+    unsigned long long texObj);
+                   
 /*! destroy the given texture; after this call any accesses to the 
    given texture are invalid */
 OWL_API void

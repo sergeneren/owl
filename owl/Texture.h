@@ -33,7 +33,11 @@ namespace owl {
             OWLTextureColorSpace colorSpace,
             const void          *texels
             );
-    
+
+	Texture(Context* const context,
+        unsigned long long texObj
+	);
+
     /*! destructor - free device data, de-regsiter, and destruct */
     virtual ~Texture();
     
@@ -57,6 +61,7 @@ namespace owl {
     uint32_t             linePitchInBytes;
     OWLTexelFormat       texelFormat;
     OWLTextureFilterMode filterMode;
+    bool                 arrayHandledExternally;
   };
 
 } // ::owl

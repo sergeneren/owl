@@ -140,6 +140,20 @@ namespace owl {
 
       textureObjects.push_back(cuda_tex);
     }
+
+    arrayHandledExternally = false;
+  }
+
+  Texture::Texture(Context *const context,
+                unsigned long long texObj)
+    : RegisteredObject(context,context->textures)
+  {
+    for (auto device : context->getDevices()) {
+      SetActiveGPU forLifeTime(device);
+      textureObjects.push_back((cudaTextureObject_t)texObj);
+    }
+
+    arrayHandledExternally = true;
   }
 
   /* return the cuda texture object corresponding to the specified 
@@ -167,7 +181,9 @@ namespace owl {
       SetActiveGPU forLifeTime(device);
       uint32_t id = device->ID;
       cudaDestroyTextureObject(textureObjects[id]);
-      cudaFreeArray(textureArrays[id]);
+
+      if(!arrayHandledExternally)
+          cudaFreeArray(textureArrays[id]);
     }
 
     deviceData.clear();

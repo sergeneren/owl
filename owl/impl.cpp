@@ -785,6 +785,18 @@ owlTexture2DCreate(OWLContext _context,
   return (OWLTexture)context->createHandle(texture);
 }
 
+OWL_API OWLTexture
+owlTexture2DCreateFromCudaTexture(OWLContext _context,
+    unsigned long long texObj)
+{
+  LOG_API_CALL();
+  APIContext::SP context = checkGet(_context);
+  Texture::SP  texture
+    = context->texture2DCreate(texObj);
+  assert(texture);
+  return (OWLTexture)context->createHandle(texture);
+}
+
 OWL_API CUtexObject
 owlTextureGetObject(OWLTexture _texture, int deviceID)
 {

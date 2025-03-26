@@ -155,6 +155,9 @@ namespace owl {
                     uint32_t linePitchInBytes,
                     const void *texels);
 
+	Texture::SP
+		texture2DCreate(unsigned long long texObj);
+
     /*! create a new *triangles* geometry group that will eventually
       create a BVH over all the trianlges across all its child
       geometries. only TrianglesGeoms can be added to this
