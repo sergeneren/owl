@@ -31,6 +31,20 @@
               << message << OWL_TERMINAL_DEFAULT << std::endl
 
 
+#ifdef OWL_CAN_DO_OMM
+#include <OptiXToolkit/CuOmmBaking/CuOmmBaking.h>
+
+// Check status returned by a CuOmmBaking calls.
+inline void check(cuOmmBaking::Result status)
+{
+	if (status != cuOmmBaking::Result::SUCCESS)
+	{
+		throw std::runtime_error("OMM baking failure.");
+	}
+}
+#endif
+
+
 namespace owl {
 
   /*! pretty-printer, for printf-debugging */
@@ -126,6 +140,19 @@ namespace owl {
 
     size_t maxNumbytesDmm = 0;
 
+#ifdef OWL_CAN_DO_OMM
+    std::vector<OptixOpacityMicromapUsageCount*> ommUsageCounts;
+    std::vector<OptixOpacityMicromapHistogramEntry*> ommHistEntries;
+    DeviceMemory d_ommIndices;
+    DeviceMemory d_ommOutput;
+	DeviceMemory d_ommDescs;
+	DeviceMemory d_usageCounts;
+	DeviceMemory d_histogramEntries;
+	DeviceMemory d_temp;
+	DeviceMemory d_postBakeBuffer;
+#endif // OWL_CAN_DO_OMM
+
+
     // now go over all geometries to set up the buildinputs
     for (size_t childID=0;childID<geometries.size();childID++) {
 
@@ -151,84 +178,128 @@ namespace owl {
       ta.vertexBuffers       = d_vertices;
 
 #ifdef OWL_CAN_DO_OMM
-      if(!trisDD.ommIndexPointer.empty() && tris->ommSubdivisionLevel > 0)
+      if(tris->ommSubdivisionLevel > -1 && trisDD.texCoordPointer)
       {
-		  unsigned int numSubTrianglesPerBaseTriangle = 1 << (2 * tris->ommSubdivisionLevel);
-          unsigned int bitsPerState = 2;
-
-		  size_t numTriangles = tris->index.count;
-		  size_t numSubTriangles = numTriangles * numSubTrianglesPerBaseTriangle;
-
-          OptixOpacityMicromapHistogramEntry histogram{};
-		  histogram.count = numTriangles;
-		  histogram.format = OPTIX_OPACITY_MICROMAP_FORMAT_4_STATE;
-		  histogram.subdivisionLevel = tris->ommSubdivisionLevel;
-
-          OptixOpacityMicromapArrayBuildInput build_input = {};
-		  build_input.flags = OPTIX_OPACITY_MICROMAP_FLAG_NONE;
-		  build_input.inputBuffer = trisDD.ommIndexPointer.d_pointer;
-		  build_input.numMicromapHistogramEntries = 1;
-		  build_input.micromapHistogramEntries = &histogram;
+		  // Opacity Micromap Baking:
+		  cuOmmBaking::TextureDesc textureDesc = {};
 		  
-          OptixMicromapBufferSizes buffer_sizes = {};
-		  OPTIX_CHECK(optixOpacityMicromapArrayComputeMemoryUsage(device->optixContext, &build_input, &buffer_sizes));
-          
-		  // Two OMMs, both with the same layout
-          std::vector<OptixOpacityMicromapDesc> omm_descs;
+          textureDesc.type = cuOmmBaking::TextureType::CUDA;
+		  textureDesc.cuda.alphaMode = cuOmmBaking::CudaTextureAlphaMode::CHANNEL_W; // DEFAULT will use CHANNEL_W on RGBA cutoutTexture.
+		  textureDesc.cuda.filterKernelWidthInTexels = 0.05f;
+		  textureDesc.cuda.texObject = trisDD.ommOpacityTexture; 
 
-          for (int triIdx = 0; triIdx < numTriangles; triIdx++)
-          {
-              OptixOpacityMicromapDesc desc =
-              {
-                  triIdx * (numSubTrianglesPerBaseTriangle / 16 * bitsPerState) * sizeof(unsigned short),
-                  (unsigned short)tris->ommSubdivisionLevel,
-                  OPTIX_OPACITY_MICROMAP_FORMAT_4_STATE
-              };
-              omm_descs.push_back(desc);
-          }
+		  cuOmmBaking::BakeOptions ommOptions = {};
+
+		  ommOptions.flags = cuOmmBaking::BakeFlags::ENABLE_POST_BAKE_INFO; // Used to determine if OMMs have been baked.
+		  ommOptions.format = OPTIX_OPACITY_MICROMAP_FORMAT_4_STATE; // default 4-state
+		  ommOptions.maximumSizeInBytes = 0;    // default 0, size picked based on the input texture dimensions.
+		  ommOptions.subdivisionScale = float(tris->ommSubdivisionLevel); // The higher, the lower the OMM subdivision level used.
+
+		  cuOmmBaking::BakeInputDesc input = {};
+
+		  input.texCoordFormat = cuOmmBaking::TexCoordFormat::UV32_FLOAT2;
+		  input.texCoordBuffer = trisDD.texCoordPointer; // Offset of texcoord in VertexAttributes array. Data must be aligned to 4-bytes, float elements.
+		  //input.numTexCoords = (uint32_t)tris->texCoord.count; // Not required for indexed triangles.
+
+          input.indexFormat = cuOmmBaking::IndexFormat::I32_UINT;
+		  input.indexBuffer = trisDD.indexPointer;
+		  input.numIndexTriplets = (uint32_t)tris->index.count;
+          //input.indexTripletStrideInBytes = (uint32_t)tris->index.stride;
+
+          input.numTextures = 1;
+		  input.textures = &textureDesc;
+
+		  cuOmmBaking::BakeInputBuffers inputBuffer = {};
+		  cuOmmBaking::BakeBuffers      buffers = {};
+
+		  // No need to synchronize, yet. 
+		  // "This function does NOT execute any device tasks, does NOT access input/output device memory and does NOT synchronize with the device."
+		  check(cuOmmBaking::GetPreBakeInfo(&ommOptions, 1, &input, &inputBuffer, &buffers));
+
+	      d_ommIndices.alloc(inputBuffer.indexBufferSizeInBytes);
+		  d_usageCounts.alloc(inputBuffer.numMicromapUsageCounts * sizeof(OptixOpacityMicromapUsageCount));
+		  d_ommOutput.alloc(buffers.outputBufferSizeInBytes);
+		  d_ommDescs.alloc(buffers.numMicromapDescs * sizeof(OptixOpacityMicromapDesc));
+		  d_histogramEntries.alloc(buffers.numMicromapHistogramEntries * sizeof(OptixOpacityMicromapHistogramEntry));
+		  d_temp.alloc(buffers.tempBufferSizeInBytes);
+          d_postBakeBuffer.alloc(buffers.postBakeInfoBufferSizeInBytes);
+
+          inputBuffer.indexBuffer = d_ommIndices.d_pointer;
+          inputBuffer.micromapUsageCountsBuffer = d_usageCounts.d_pointer;
+          buffers.outputBuffer = d_ommOutput.d_pointer;
+          buffers.perMicromapDescBuffer = d_ommDescs.d_pointer;
+          buffers.micromapHistogramEntriesBuffer = d_histogramEntries.d_pointer;
+          buffers.tempBuffer = d_temp.d_pointer;
+          buffers.postBakeInfoBuffer = d_postBakeBuffer.d_pointer;
+
+		  check(cuOmmBaking::BakeOpacityMicromaps(&ommOptions, 1, &input, &inputBuffer, &buffers));
+
+		  // Download data that is needed on the host to build the OptiX Opacity Micromap Array.
+		  cuOmmBaking::PostBakeInfo postBakeInfo = {};
+          d_postBakeBuffer.download((void*)&postBakeInfo);
+          d_postBakeBuffer.free();
+
+          OptixOpacityMicromapUsageCount* micromapUsageCounts = new OptixOpacityMicromapUsageCount[inputBuffer.numMicromapUsageCounts];
+          d_usageCounts.download((void*)micromapUsageCounts);
+          //ommUsageCounts.push_back(micromapUsageCounts);
+
+          OptixOpacityMicromapHistogramEntry* micromapHistogramEntries = new OptixOpacityMicromapHistogramEntry[buffers.numMicromapHistogramEntries];
+          d_histogramEntries.download((void*)micromapHistogramEntries);
+          //ommHistEntries.push_back(micromapHistogramEntries);
 		  
-          DeviceMemory d_descriptors;
-		  d_descriptors.upload(omm_descs);
+		  //if (postBakeInfo.numMicromapDescs != 0 && postBakeInfo.compactedSizeInBytes != 0)
+		  {
+			  // Build OptiX Opacity Micromap Array.
+			  OptixMicromapBufferSizes              ommArraySizes = {};
+			  OptixOpacityMicromapArrayBuildInput   ommArrayInput = {};
 
-		  build_input.perMicromapDescBuffer = d_descriptors.d_pointer;
-		  build_input.perMicromapDescStrideInBytes = 0;
+			  //ommArrayInput.flags = OPTIX_OPACITY_MICROMAP_FLAG_PREFER_FAST_TRACE;
+			  ommArrayInput.micromapHistogramEntries = micromapHistogramEntries;
+			  ommArrayInput.numMicromapHistogramEntries = static_cast<unsigned int>(buffers.numMicromapHistogramEntries);
+			  ommArrayInput.perMicromapDescStrideInBytes = sizeof(OptixOpacityMicromapDesc); // This is the default when using 0.
 
-          DeviceMemory d_temp_buffer;
-		  d_temp_buffer.alloc(buffer_sizes.tempSizeInBytes);
-		  trisDD.ommArray.alloc(buffer_sizes.outputSizeInBytes);
+			  OPTIX_CHECK(optixOpacityMicromapArrayComputeMemoryUsage(device->optixContext, &ommArrayInput, &ommArraySizes));
 
-          OptixMicromapBuffers micromap_buffers = {};
-		  micromap_buffers.output =  trisDD.ommArray.d_pointer;
-		  micromap_buffers.outputSizeInBytes = buffer_sizes.outputSizeInBytes;
-		  micromap_buffers.temp = d_temp_buffer.d_pointer;
-		  micromap_buffers.tempSizeInBytes = buffer_sizes.tempSizeInBytes;
+			  OptixMicromapBuffers ommArrayBuffers = {};
+			  ommArrayBuffers.outputSizeInBytes = ommArraySizes.outputSizeInBytes;
+			  ommArrayBuffers.tempSizeInBytes = ommArraySizes.tempSizeInBytes;
+			  ommArrayInput.perMicromapDescBuffer = buffers.perMicromapDescBuffer;
+			  ommArrayInput.inputBuffer = buffers.outputBuffer;
 
-		  OPTIX_CHECK(optixOpacityMicromapArrayBuild(device->optixContext, 0, &build_input, &micromap_buffers));
+              d_ommOutput.alloc(ommArrayBuffers.outputSizeInBytes);
 
-          trisDD.ommIndexPointer.free();
-          d_temp_buffer.free();
-          d_descriptors.free();
+              d_temp.free();
+              d_temp.alloc(ommArrayBuffers.tempSizeInBytes);
 
-          OptixOpacityMicromapUsageCount usage_count = {};
-		  usage_count.count = numTriangles;
-		  usage_count.format = OPTIX_OPACITY_MICROMAP_FORMAT_4_STATE;
-		  usage_count.subdivisionLevel = tris->ommSubdivisionLevel;
+			  ommArrayBuffers.output = d_ommOutput.d_pointer; // The final OMM array data.
+			  ommArrayBuffers.temp = d_temp.d_pointer;
 
-          std::vector<unsigned short> omm_indices(numTriangles);
-          for (unsigned int i = 0; i < numTriangles; i++)
-              omm_indices[i] = i;
+			  OPTIX_CHECK(optixOpacityMicromapArrayBuild(device->optixContext, 0, &ommArrayInput, &ommArrayBuffers));
 
-          trisDD.ommIndices.upload(omm_indices);
+			  // Free the input buffers to the OMM array build.
+			  OptixBuildInputOpacityMicromap ommBuildInput = {};
 
-          OptixBuildInputOpacityMicromap ommInput = {};
-		  ommInput.indexingMode = OPTIX_OPACITY_MICROMAP_ARRAY_INDEXING_MODE_INDEXED;
-		  ommInput.opacityMicromapArray =  trisDD.ommArray.d_pointer;
-		  ommInput.indexBuffer = trisDD.ommIndices.d_pointer;
-		  ommInput.indexSizeInBytes = 2;
-		  ommInput.numMicromapUsageCounts = 1;
-		  ommInput.micromapUsageCounts = &usage_count;
+			  ommBuildInput.indexingMode = OPTIX_OPACITY_MICROMAP_ARRAY_INDEXING_MODE_INDEXED;
+			  ommBuildInput.opacityMicromapArray = ommArrayBuffers.output;    // Persistent allocation!
+			  ommBuildInput.indexBuffer = inputBuffer.indexBuffer;  // Persistent allocation!
+			  ommBuildInput.indexSizeInBytes = (buffers.indexFormat == cuOmmBaking::IndexFormat::I32_UINT) ? sizeof(unsigned int) : sizeof(unsigned short);
+			  ommBuildInput.indexStrideInBytes = 0; // Tightly packed.
+			  ommBuildInput.indexOffset = 0;
+			  ommBuildInput.numMicromapUsageCounts = static_cast<unsigned int>(inputBuffer.numMicromapUsageCounts);
+			  ommBuildInput.micromapUsageCounts = micromapUsageCounts;
 
-          ta.opacityMicromap     = ommInput;
+			  // Only set the opacity micromap build input when there was OMM data generated by the baker.
+              ta.opacityMicromap = ommBuildInput;
+		  }
+
+          d_ommDescs.free();
+          d_ommOutput.free();
+		  d_ommIndices.free();
+		  d_ommOutput.free();
+		  d_ommDescs.free();
+		  d_usageCounts.free();
+		  d_histogramEntries.free();
+		  d_postBakeBuffer.free();
       }
 #endif // OWL_CAN_DO_OMM
       
@@ -361,7 +432,7 @@ namespace owl {
     accelOptions.buildFlags = this->buildFlags;
 
 #ifdef OWL_CAN_DO_DMM
-    accelOptions.buildFlags |=  OPTIX_BUILD_FLAG_ALLOW_RANDOM_VERTEX_ACCESS | OPTIX_BUILD_FLAG_PREFER_FAST_TRACE ;
+    accelOptions.buildFlags |= OPTIX_BUILD_FLAG_ALLOW_RANDOM_VERTEX_ACCESS | OPTIX_BUILD_FLAG_PREFER_FAST_TRACE;
 #endif // OWL_CAN_DO_DMM
     
     accelOptions.motionOptions.numKeys   = numKeys;

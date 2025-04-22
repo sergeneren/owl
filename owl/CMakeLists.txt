@@ -15,6 +15,7 @@
 # ======================================================================== #
 
 find_package(OptiX REQUIRED)
+find_package(OptiXToolkit REQUIRED)
 
 add_library(owl)
 
@@ -159,13 +160,13 @@ if(${CMAKE_VERSION} VERSION_GREATER_EQUAL 3.17)
   # for new cmake version, we can rely on the working cuda detection
   # mechanism
   find_package(CUDAToolkit REQUIRED)
-  target_link_libraries(owl PUBLIC CUDA::cuda_driver CUDA::cudart_static)
+  target_link_libraries(owl PUBLIC CUDA::cuda_driver CUDA::cudart_static OptiXToolkit::CuOmmBaking)
 else()
   # for older version of cmake (where CUDAToolkit detection doesn't
   # properly work) we fall back to search paths for hardcoded library
   # names and header name; this isn't clean, but applies only for a
   # small set of deprecated cmake versions, so OK for now.
-  target_link_libraries(owl PUBLIC cuda)
+  target_link_libraries(owl PUBLIC cuda OptiXToolkit::CuOmmBaking)
   find_path(cuda_h_dir NAMES cuda.h HINTS /usr/local/cuda/include)
   target_include_directories(owl PUBLIC ${cuda_h_dir})
 endif()

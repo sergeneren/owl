@@ -63,9 +63,7 @@ namespace owl {
       CUdeviceptr texCoordPointer  = (CUdeviceptr)0;
 
 #ifdef OWL_CAN_DO_OMM
-      DeviceMemory ommArray;
-      DeviceMemory ommIndexPointer;
-      DeviceMemory ommIndices;
+      cudaTextureObject_t ommOpacityTexture;
 #endif
 
 #ifdef OWL_CAN_DO_DMM
@@ -116,12 +114,9 @@ namespace owl {
                     size_t count,
                     size_t stride,
                     size_t offset);
-    
-    /*! set the omm indices buffer; this remains one buffer even if motion blur is enabled. */
-    void setOMMIndices(Buffer::SP indices,
-                    size_t count,
-                    size_t stride,
-                    size_t offset);
+ 
+    /*! set the opacity texture to be used as OMM texture. */
+    void setOpacityTexture(Texture::SP opacityTexture);
 
     /*! call a cuda kernel that computes the bounds of the vertex buffers */
     void computeBounds(box3f bounds[2]);
@@ -136,7 +131,7 @@ namespace owl {
     std::string toString() const override;
 
     void setDMMSubdivisionLevel(unsigned int level) { dmmSubdivisionLevel = level; }
-    void setOMMSubdivisionLevel(unsigned int level) { ommSubdivisionLevel = level; }
+    void setOMMSubdivisionLevel(int level) { ommSubdivisionLevel = level; }
     void setDisplacementScale(float scale) { displacementScale = scale; }
 
     struct {
@@ -165,7 +160,7 @@ namespace owl {
     } vertex;
 
     unsigned int dmmSubdivisionLevel = 0;
-    unsigned int ommSubdivisionLevel = 0;
+    int ommSubdivisionLevel = 0;
     float displacementScale = 1.0f;
   };
 
