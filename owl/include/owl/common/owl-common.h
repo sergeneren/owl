@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2018-2020 Ingo Wald                                            //
+// Copyright 2018-2024 Ingo Wald                                            //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -19,7 +19,7 @@
 #ifndef _USE_MATH_DEFINES
 #  define _USE_MATH_DEFINES
 #endif
-#include <math.h> // using cmath causes issues under Windows
+// #include <math.h> // using cmath causes issues under Windows
 
 #include <stdio.h>
 #include <iostream>
@@ -28,7 +28,8 @@
 #include <assert.h>
 #include <string>
 #include <math.h>
-#include <cmath>
+// #include <cmath>
+#include <cfloat>
 #include <algorithm>
 #include <sstream>
 #ifdef __GNUC__
@@ -88,9 +89,9 @@
 
 
 #ifndef PRINT
-# define PRINT(var) std::cout << #var << "=" << var << std::endl;
+# define PRINT(var) std::cout << #var << "=" << var << std::endl << std::flush;
 #ifdef __WIN32__
-# define PING std::cout << __FILE__ << "::" << __LINE__ << ": " << __FUNCTION__ << std::endl;
+# define PING std::cout << __FILE__ << "::" << __LINE__ << ": " << __FUNCTION__ << std::endl << std::flush;
 #else
 # define PING std::cout << __FILE__ << "::" << __LINE__ << ": " << __PRETTY_FUNCTION__ << std::endl;
 #endif

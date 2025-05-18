@@ -17,6 +17,7 @@
 #include "Context.h"
 #include "UserGeom.h"
 #include "InstanceGroup.h"
+#include "CUDADriver.h"
 
 #include <optix_function_table_definition.h>
 
@@ -143,17 +144,14 @@ namespace owl {
     // ------------------------------------------------------------------
     // init optix itself
     // ------------------------------------------------------------------
-#if OPTIX_VERSION >= 70400
-    LOG("initializing optix 7.4");
-#elif OPTIX_VERSION >= 70300
-    LOG("initializing optix 7.3");
-#elif OPTIX_VERSION >= 70200
-    LOG("initializing optix 7.2");
-#elif OPTIX_VERSION >= 70100
-    LOG("initializing optix 7.1");
-#else
-    LOG("initializing optix 7");
-#endif
+
+    int major =  OPTIX_VERSION/10000;
+    int minor = (OPTIX_VERSION%10000)/100;
+    int micro =  OPTIX_VERSION%100;
+    
+    std::stringstream ss;
+    ss << "initializing optix " << major << "." << minor << "." << micro;
+    LOG(ss.str().c_str());
     static bool initialized = false;
     if (!initialized) {
       OPTIX_CHECK(optixInit());
@@ -206,11 +204,15 @@ namespace owl {
     
     OWL_CUDA_CHECK(cudaSetDevice(cudaDeviceID));
     OWL_CUDA_CHECK(cudaStreamCreate(&stream));
-    
-    CUresult  cuRes = cuCtxGetCurrent(&cudaContext);
+
+#if 1
+    // use current context
+    cudaContext = 0;
+#else
+    CUresult  cuRes = _cuCtxGetCurrent(&cudaContext);
     if (cuRes != CUDA_SUCCESS) 
-      OWL_RAISE("Error querying current CUDA context...");
-    
+       OWL_RAISE("Error querying current CUDA context...");
+#endif
     OPTIX_CHECK(optixDeviceContextCreate(cudaContext, 0, &optixContext));
     OPTIX_CHECK(optixDeviceContextSetLogCallback
                 (optixContext,context_log_cb,this,4));
@@ -574,6 +576,7 @@ namespace owl {
   
   void DeviceContext::buildHitGroupPrograms()
   {
+    assert(parent);
     const int numRayTypes = parent->numRayTypes;
     
     // ------------------------------------------------------------------
@@ -590,11 +593,11 @@ namespace owl {
         userGeomType->buildMotionBoundsProg();
       else if (userGeomType)
         userGeomType->buildBoundsProg();
-      
+
       auto &dd = geomType->getDD(shared_from_this());
       dd.hgPGs.clear();
       dd.hgPGs.resize(numRayTypes);
-      
+
       for (int rt=0;rt<numRayTypes;rt++) {
         
         OptixProgramGroupOptions pgOptions = {};
@@ -633,8 +636,12 @@ namespace owl {
     // ------------------------------------------------------------------
     for (size_t groupID=0;groupID<parent->groups.size();groupID++) {
       // skip groups which are not "Instance Group" types
+      Group::SP group = parent->groups.getSP(groupID);
+      if (!group)
+        continue;
       InstanceGroup::SP instanceGroup
-        = parent->groups.getSP(groupID)->as<InstanceGroup>();
+        = group->as<InstanceGroup>();
+      
       if (!instanceGroup)
         continue;
       
