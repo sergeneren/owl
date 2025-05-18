@@ -1018,7 +1018,20 @@ OWL_API void owlSpheresSetVertices(OWLGeom spheresGeom,
                                        /*! buffer of (one float per
                                            sphere) specifies radius*/
                                        OWLBuffer radius);
-                                       
+                  
+OWL_API void owlSpheresSetMotionVertices(OWLGeom spheresGeom,
+    /*! number of vertex arrays
+        passed here, the first
+        of those is for t=0,
+        thelast for t=1,
+        everything is linearly
+        interpolated
+        in-between */
+    size_t    numKeys,
+    int       numSpheres,
+    OWLBuffer* vertices,
+    OWLBuffer* radius);
+
 // -------------------------------------------------------
 // group/hierarchy creation and setting
 // -------------------------------------------------------

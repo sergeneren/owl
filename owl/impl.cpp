@@ -2087,3 +2087,44 @@ OWL_API void owlSpheresSetVertices(OWLGeom _spheres,
 
 	spheres->setVertices({ vertices_buffer }, { radii_buffer }, numSpheres);
 }
+
+void owlSpheresSetMotionVertices(OWLGeom _spheres,
+    /*! number of vertex arrays
+        passed here, the first
+        of those is for t=0,
+        thelast for t=1,
+        everything is linearly
+        interpolated
+        in-between */
+    size_t    numKeys,
+    int       numSpheres,
+    OWLBuffer* vertices,
+    OWLBuffer* radius)
+{
+	LOG_API_CALL();
+
+	assert(_spheres);
+	assert(vertices);
+	assert(radius);
+
+	SphereGeom::SP spheres
+		= ((APIHandle*)_spheres)->get<SphereGeom>();
+	assert(spheres);
+
+	assert(numKeys >= 2);
+	std::vector<Buffer::SP> vertexBuffers;
+	std::vector<Buffer::SP> radiusBuffers;
+	for (size_t i = 0; i < numKeys; i++) {
+		Buffer::SP vertexBuffer
+			= ((APIHandle*)vertices[i])->get<Buffer>();
+		assert(vertexBuffer);
+        vertexBuffers.push_back(vertexBuffer);
+
+		Buffer::SP radiusBuffer
+			= ((APIHandle*)radius[i])->get<Buffer>();
+		assert(radiusBuffer);
+        radiusBuffers.push_back(radiusBuffer);
+	}
+
+    spheres->setVertices(vertexBuffers, radiusBuffers, numSpheres);
+}
